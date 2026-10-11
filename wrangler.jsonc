@@ -1,0 +1,17 @@
+{
+  "name": "instyle-online",
+  "main": "./src/index.js",
+  "compatibility_date": "2026-10-10",
+  "assets": {
+    "directory": "./public/",
+    "binding": "ASSETS",
+    "run_worker_first": true
+  },
+  "d1_databases": [
+    {
+      "binding": "DB",
+      "database_name": "instyle-db",
+      "database_id": "1fefead0-0f2f-489e-8f22-5749817a9fd7"
+    }
+  ]
+}
