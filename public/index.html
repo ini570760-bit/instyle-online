@@ -6479,6 +6479,217 @@ document.addEventListener('DOMContentLoaded',function(){
     if(typeof window.refreshInstyleAdminFloat==='function') window.refreshInstyleAdminFloat();
   });
 })();
+
+// ========================================
+// I.N STYLE — MENSAJES RECIBIDOS
+// ========================================
+
+(function () {
+  const button = document.getElementById("loadStayMessages");
+  const container = document.getElementById("stayMessagesList");
+
+  if (!button || !container) {
+    console.warn("No se encontró el botón o la lista de mensajes.");
+    return;
+  }
+
+  // Crear elementos de texto de forma segura
+  function addText(parent, tag, value) {
+    const element = document.createElement(tag);
+    element.textContent = value || "";
+    parent.appendChild(element);
+    return element;
+  }
+
+  // Mostrar información de cada mensaje
+  function renderMessages(messages) {
+    container.replaceChildren();
+
+    if (!messages.length) {
+      addText(
+        container,
+        "p",
+        "Todavía no hay mensajes recibidos."
+      );
+      return;
+    }
+
+    messages.forEach(function (message) {
+      const card = document.createElement("article");
+
+      card.style.cssText = [
+        "padding:16px",
+        "margin:14px 0",
+        "border:1px solid #c9b27c",
+        "border-radius:10px",
+        "background:#fffdf8",
+        "color:#24211d",
+        "overflow-wrap:anywhere"
+      ].join(";");
+
+      addText(card, "h4", message.category || "Consulta");
+      addText(card, "p", "Nombre: " + (message.name || "No indicado"));
+      addText(card, "p", "Correo: " + (message.email || "No indicado"));
+      addText(
+        card,
+        "p",
+        "Fecha: " + (
+          message.created_at
+            ? new Date(message.created_at).toLocaleString("es-AR")
+            : "No disponible"
+        )
+      );
+
+      const description = document.createElement("p");
+      description.style.whiteSpace = "pre-wrap";
+      description.textContent = "Mensaje: " + (message.description || "");
+      card.appendChild(description);
+
+      if (message.attachment_name) {
+        addText(
+          card,
+          "p",
+          "Archivo adjunto: " +
+            message.attachment_name +
+            " (" +
+            Math.round((message.attachment_size || 0) / 1024) +
+            " KB)"
+        );
+
+        addText(
+          card,
+          "p",
+          "Nota: el formulario guarda los datos del archivo, pero no el archivo en sí."
+        );
+      }
+
+      const deleteButton = document.createElement("button");
+      deleteButton.type = "button";
+      deleteButton.textContent = "ELIMINAR MENSAJE";
+
+      deleteButton.style.cssText = [
+        "padding:10px 14px",
+        "border:0",
+        "border-radius:6px",
+        "background:#5b2929",
+        "color:white",
+        "cursor:pointer"
+      ].join(";");
+
+      deleteButton.addEventListener("click", async function () {
+        const confirmed = confirm(
+          "¿Querés eliminar este mensaje? Esta acción no se puede deshacer."
+        );
+
+        if (!confirmed) return;
+
+        deleteButton.disabled = true;
+        deleteButton.textContent = "ELIMINANDO...";
+
+        try {
+          const response = await fetch("/api/messages", {
+            method: "DELETE",
+            credentials: "same-origin",
+            headers: {
+              "Content-Type": "application/json"
+            },
+            body: JSON.stringify({
+              id: message.id
+            })
+          });
+
+          const result = await response.json();
+
+          if (!response.ok) {
+            throw new Error(
+              result.message || "No se pudo eliminar el mensaje."
+            );
+          }
+
+          await loadMessages(false);
+
+        } catch (error) {
+          alert(error.message || "Ocurrió un error.");
+          deleteButton.disabled = false;
+          deleteButton.textContent = "ELIMINAR MENSAJE";
+        }
+      });
+
+      card.appendChild(deleteButton);
+      container.appendChild(card);
+    });
+  }
+
+  // Consultar los mensajes
+  async function loadMessages(askForSecret) {
+    button.disabled = true;
+    button.textContent = "CARGANDO MENSAJES...";
+
+    try {
+      if (askForSecret) {
+        const secret = prompt(
+          "Ingresá la clave privada de administración configurada en Cloudflare."
+        );
+
+        if (secret === null || !secret.trim()) {
+          return;
+        }
+
+        const loginResponse = await fetch("/api/admin-login", {
+          method: "POST",
+          credentials: "same-origin",
+          headers: {
+            "Content-Type": "application/json"
+          },
+          body: JSON.stringify({
+            secret: secret
+          })
+        });
+
+        const loginResult = await loginResponse.json();
+
+        if (!loginResponse.ok) {
+          throw new Error(
+            loginResult.message || "No se pudo iniciar sesión."
+          );
+        }
+      }
+
+      const response = await fetch("/api/messages", {
+        method: "GET",
+        credentials: "same-origin",
+        cache: "no-store"
+      });
+
+      const result = await response.json();
+
+      if (!response.ok) {
+        throw new Error(
+          result.message || "No se pudieron cargar los mensajes."
+        );
+      }
+
+      renderMessages(result.messages || []);
+
+    } catch (error) {
+      container.replaceChildren();
+
+      addText(
+        container,
+        "p",
+        error.message || "Ocurrió un error al cargar los mensajes."
+      );
+
+    } finally {
+      button.disabled = false;
+      button.textContent = "VER MENSAJES RECIBIDOS";
+    }
+  }
+
+  button.addEventListener("click", function () {
+    loadMessages(true);
+  });
+})();
 </script>
 </body>
 </html>
