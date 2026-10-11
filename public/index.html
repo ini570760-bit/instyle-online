@@ -3766,6 +3766,15 @@ footer p {
             <div class="admin-field full"><label>CORREO DESTINATARIO</label><input id="contactRecipientEmail" type="email" placeholder="tucorreo@gmail.com"><p class="admin-note">Podés cambiar el correo destinatario desde acá sin tocar el HTML.</p></div>
           </div>
           <div class="admin-home-actions"><button type="button" class="admin-primary" id="saveContactSettings">GUARDAR</button><button type="button" class="admin-secondary" id="closeContactEditor">CERRAR</button></div>
+          <div class="admin-home-actions">
+  <button type="button" class="admin-primary" id="loadStayMessages">
+    VER MENSAJES RECIBIDOS
+  </button>
+</div>
+
+<div id="stayMessagesList" aria-live="polite">
+  <p class="admin-note">Presioná «VER MENSAJES RECIBIDOS» para consultar los mensajes.</p>
+</div>
           <p id="contactSettingsMessage" class="admin-message" aria-live="polite"></p>
         </div>
 
