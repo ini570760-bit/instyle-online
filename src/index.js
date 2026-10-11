@@ -3,6 +3,81 @@ export default {
     const url = new URL(request.url);
 
     // =========================
+    // API — INICIAR SESIÓN ADMIN
+    // =========================
+
+    if (url.pathname === "/api/admin-login") {
+      if (request.method !== "POST") {
+        return json(
+          { message: "Método no permitido." },
+          405
+        );
+      }
+
+      if (!env.INSTYLE_ADMIN_SECRET) {
+        return json(
+          { message: "La clave privada no está configurada en Cloudflare." },
+          500
+        );
+      }
+
+      try {
+        const body = await request.json();
+        const secret = String(body.secret || "");
+
+        if (secret !== env.INSTYLE_ADMIN_SECRET) {
+          return json(
+            { message: "Clave incorrecta." },
+            401
+          );
+        }
+
+        const cookieValue = encodeURIComponent(secret);
+
+        return new Response(
+          JSON.stringify({
+            ok: true,
+            message: "Sesión iniciada correctamente."
+          }),
+          {
+            status: 200,
+            headers: {
+              "content-type": "application/json; charset=UTF-8",
+              "cache-control": "no-store",
+              "set-cookie":
+                `instyle_admin_session=${cookieValue}; HttpOnly; Secure; SameSite=Strict; Path=/; Max-Age=28800`
+            }
+          }
+        );
+
+      } catch (error) {
+        return json(
+          { message: "No se pudo iniciar la sesión." },
+          400
+        );
+      }
+    }
+
+    // =========================
+    // API — CERRAR SESIÓN ADMIN
+    // =========================
+
+    if (url.pathname === "/api/admin-logout") {
+      return new Response(
+        JSON.stringify({ ok: true }),
+        {
+          status: 200,
+          headers: {
+            "content-type": "application/json; charset=UTF-8",
+            "cache-control": "no-store",
+            "set-cookie":
+              "instyle_admin_session=; HttpOnly; Secure; SameSite=Strict; Path=/; Max-Age=0"
+          }
+        }
+      );
+    }
+
+    // =========================
     // API — ESTADO DEL SITIO
     // =========================
 
@@ -10,7 +85,9 @@ export default {
       if (request.method === "GET") {
         try {
           const rows = await env.DB
-            .prepare("SELECT state_key, state_value FROM site_state")
+            .prepare(
+              "SELECT state_key, state_value FROM site_state"
+            )
             .all();
 
           const state = {};
@@ -20,45 +97,73 @@ export default {
           }
 
           return json({ state });
+
         } catch (error) {
           return json(
-            { message: "No se pudo leer el estado del sitio." },
+            {
+              message: "No se pudo leer el estado del sitio."
+            },
             500
           );
         }
       }
 
       if (request.method === "POST") {
-        if (!isAdmin(request)) {
-          return json({ message: "No autorizado." }, 401);
+        if (!isAdmin(request, env)) {
+          return json(
+            { message: "No autorizado." },
+            401
+          );
         }
 
         try {
           const body = await request.json();
 
           if (body.key) {
-            await saveStateKey(env.DB, body.key, body.value);
+            await saveStateKey(
+              env.DB,
+              body.key,
+              body.value
+            );
+
             return json({ ok: true });
           }
 
-          if (body.state && typeof body.state === "object") {
+          if (
+            body.state &&
+            typeof body.state === "object" &&
+            !Array.isArray(body.state)
+          ) {
             for (const [key, value] of Object.entries(body.state)) {
-              await saveStateKey(env.DB, key, value);
+              await saveStateKey(
+                env.DB,
+                key,
+                value
+              );
             }
 
             return json({ ok: true });
           }
 
-          return json({ message: "Estado inválido." }, 400);
+          return json(
+            { message: "Estado inválido." },
+            400
+          );
+
         } catch (error) {
           return json(
-            { message: "No se pudo guardar el estado." },
+            {
+              message: "No se pudo guardar el estado."
+            },
             500
           );
         }
       }
 
-      return json({ message: "Método no permitido." }, 405);
+      return json(
+        { message: "Método no permitido." },
+        405
+      );
     }
 
     // =========================
@@ -66,19 +171,24 @@ export default {
     // =========================
 
     if (url.pathname === "/api/messages") {
-      // Limpiar mensajes con más de 3 días
+
+      // Limpiar mensajes con más de 3 días.
+      // Si falla la limpieza, continuar.
       try {
         await cleanupMessages(env.DB);
       } catch (error) {
-        // Si falla la limpieza, continuar con la solicitud.
+        // No interrumpir la solicitud.
       }
 
-      // Recibir mensajes del formulario
+      // =========================
+      // RECIBIR MENSAJES
+      // Formulario público
+      // =========================
+
       if (request.method === "POST") {
         try {
           const form = await request.formData();
 
-          // Aceptar diferentes nombres para los campos
           const category = clean(
             form.get("category") ||
             form.get("motivo") ||
@@ -103,7 +213,9 @@ export default {
           );
 
           // Campo trampa anti-bot
-          const honeypot = clean(form.get("website"));
+          const honeypot = clean(
+            form.get("website")
+          );
 
           if (honeypot) {
             return json({ ok: true });
@@ -122,7 +234,9 @@ export default {
 
           if (!isValidEmail(email)) {
             return json(
-              { message: "Ingresá un correo válido." },
+              {
+                message: "Ingresá un correo válido."
+              },
               400
             );
           }
@@ -135,7 +249,10 @@ export default {
             description.length > 10000
           ) {
             return json(
-              { message: "El mensaje supera el límite permitido." },
+              {
+                message:
+                  "El mensaje supera el límite permitido."
+              },
               400
             );
           }
@@ -153,9 +270,17 @@ export default {
             "name" in attachment &&
             attachment.name
           ) {
-            attachmentName = String(attachment.name || "");
-            attachmentType = String(attachment.type || "");
-            attachmentSize = Number(attachment.size || 0);
+            attachmentName = String(
+              attachment.name || ""
+            );
+
+            attachmentType = String(
+              attachment.type || ""
+            );
+
+            attachmentSize = Number(
+              attachment.size || 0
+            );
 
             // Máximo: 8 MB
             if (attachmentSize > 8 * 1024 * 1024) {
@@ -197,7 +322,6 @@ export default {
             )
             .run();
 
-          // El correo electrónico todavía no está configurado
           return json({
             ok: true,
             emailSent: false,
@@ -222,8 +346,11 @@ export default {
       // =========================
 
       if (request.method === "GET") {
-        if (!isAdmin(request)) {
-          return json({ message: "No autorizado." }, 401);
+        if (!isAdmin(request, env)) {
+          return json(
+            { message: "No autorizado." },
+            401
+          );
         }
 
         try {
@@ -250,7 +377,10 @@ export default {
 
         } catch (error) {
           return json(
-            { message: "No se pudieron cargar los mensajes." },
+            {
+              message:
+                "No se pudieron cargar los mensajes."
+            },
             500
           );
         }
@@ -262,8 +392,11 @@ export default {
       // =========================
 
       if (request.method === "DELETE") {
-        if (!isAdmin(request)) {
-          return json({ message: "No autorizado." }, 401);
+        if (!isAdmin(request, env)) {
+          return json(
+            { message: "No autorizado." },
+            401
+          );
         }
 
         try {
@@ -272,13 +405,17 @@ export default {
 
           if (!Number.isInteger(id) || id <= 0) {
             return json(
-              { message: "ID de mensaje inválido." },
+              {
+                message: "ID de mensaje inválido."
+              },
               400
             );
           }
 
           await env.DB
-            .prepare("DELETE FROM messages WHERE id = ?")
+            .prepare(
+              "DELETE FROM messages WHERE id = ?"
+            )
             .bind(id)
             .run();
 
@@ -286,13 +423,19 @@ export default {
 
         } catch (error) {
           return json(
-            { message: "No se pudo eliminar el mensaje." },
+            {
+              message:
+                "No se pudo eliminar el mensaje."
+            },
             500
           );
         }
       }
 
-      return json({ message: "Método no permitido." }, 405);
+      return json(
+        { message: "Método no permitido." },
+        405
+      );
     }
 
     // =========================
@@ -318,26 +461,58 @@ export default {
 // ========================================
 
 function json(data, status = 200) {
-  return new Response(JSON.stringify(data), {
-    status,
-    headers: {
-      "content-type": "application/json; charset=UTF-8",
-      "cache-control": "no-store"
+  return new Response(
+    JSON.stringify(data),
+    {
+      status,
+      headers: {
+        "content-type":
+          "application/json; charset=UTF-8",
+        "cache-control": "no-store"
+      }
     }
-  });
-}
-
-
-// Acceso de administración
-function isAdmin(request) {
-  return (
-    request.headers.get("X-INSTYLE-ADMIN") ===
-    "INSTYLE2026"
   );
 }
 
 
-// Limpiar texto
+// ========================================
+// VERIFICAR SESIÓN DE ADMINISTRACIÓN
+// ========================================
+
+function isAdmin(request, env) {
+  const cookieHeader =
+    request.headers.get("Cookie") || "";
+
+  const sessionCookie = cookieHeader
+    .split(";")
+    .map(item => item.trim())
+    .find(item =>
+      item.startsWith("instyle_admin_session=")
+    );
+
+  if (!env.INSTYLE_ADMIN_SECRET || !sessionCookie) {
+    return false;
+  }
+
+  try {
+    const sessionValue = decodeURIComponent(
+      sessionCookie.slice(
+        "instyle_admin_session=".length
+      )
+    );
+
+    return sessionValue === env.INSTYLE_ADMIN_SECRET;
+
+  } catch (error) {
+    return false;
+  }
+}
+
+
+// ========================================
+// LIMPIAR TEXTO
+// ========================================
+
 function clean(value) {
   if (value === null || value === undefined) {
     return "";
@@ -347,13 +522,19 @@ function clean(value) {
 }
 
 
-// Validar correo electrónico
+// ========================================
+// VALIDAR CORREO
+// ========================================
+
 function isValidEmail(email) {
   return /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email);
 }
 
 
-// Guardar estado del sitio
+// ========================================
+// GUARDAR ESTADO DEL SITIO
+// ========================================
+
 async function saveStateKey(db, key, value) {
   const stateValue =
     value === null || value === undefined
@@ -362,7 +543,9 @@ async function saveStateKey(db, key, value) {
 
   if (stateValue === null) {
     await db
-      .prepare("DELETE FROM site_state WHERE state_key = ?")
+      .prepare(
+        "DELETE FROM site_state WHERE state_key = ?"
+      )
       .bind(key)
       .run();
 
@@ -392,7 +575,10 @@ async function saveStateKey(db, key, value) {
 }
 
 
-// Eliminar mensajes de más de 3 días
+// ========================================
+// ELIMINAR MENSAJES DE MÁS DE 3 DÍAS
+// ========================================
+
 async function cleanupMessages(db) {
   const cutoff = new Date(
     Date.now() - 3 * 24 * 60 * 60 * 1000
