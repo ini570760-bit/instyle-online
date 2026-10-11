@@ -8,10 +8,7 @@ export default {
 
     if (url.pathname === "/api/admin-login") {
       if (request.method !== "POST") {
-        return json(
-          { message: "Método no permitido." },
-          405
-        );
+        return json({ message: "Método no permitido." }, 405);
       }
 
       if (!env.INSTYLE_ADMIN_SECRET) {
@@ -26,10 +23,7 @@ export default {
         const secret = String(body.secret || "");
 
         if (secret !== env.INSTYLE_ADMIN_SECRET) {
-          return json(
-            { message: "Clave incorrecta." },
-            401
-          );
+          return json({ message: "Clave incorrecta." }, 401);
         }
 
         const cookieValue = encodeURIComponent(secret);
@@ -174,17 +168,149 @@ export default {
 
 
     // =========================
+    // API — ARCHIVOS DE MENSAJES
+    // =========================
+
+    if (url.pathname === "/api/message-file") {
+
+      if (request.method !== "GET") {
+        return json(
+          { message: "Método no permitido." },
+          405
+        );
+      }
+
+      if (!isAdmin(request, env)) {
+        return json(
+          { message: "No autorizado." },
+          401
+        );
+      }
+
+      try {
+
+        const messageId = Number(
+          url.searchParams.get("message")
+        );
+
+        const fileIndex = Number(
+          url.searchParams.get("file")
+        );
+
+
+        if (
+          !Number.isInteger(messageId) ||
+          messageId <= 0 ||
+          !Number.isInteger(fileIndex) ||
+          fileIndex < 0
+        ) {
+          return json(
+            { message: "Archivo inválido." },
+            400
+          );
+        }
+
+
+        const row = await env.DB
+          .prepare(`
+            SELECT
+              attachment_name,
+              attachment_type,
+              attachment_size
+            FROM messages
+            WHERE id = ?
+          `)
+          .bind(messageId)
+          .first();
+
+
+        if (!row) {
+          return json(
+            { message: "Mensaje no encontrado." },
+            404
+          );
+        }
+
+
+        const files = parseAttachmentMetadata(
+          row.attachment_name,
+          row.attachment_type,
+          row.attachment_size
+        );
+
+
+        const file = files[fileIndex];
+
+
+        if (!file || !file.key) {
+          return json(
+            { message: "Archivo no encontrado." },
+            404
+          );
+        }
+
+
+        const storedFile =
+          await env.MESSAGE_FILES.get(
+            file.key,
+            { type: "arrayBuffer" }
+          );
+
+
+        if (!storedFile) {
+          return json(
+            { message: "El archivo ya no está disponible." },
+            404
+          );
+        }
+
+
+        const safeName =
+          sanitizeFileName(
+            file.name || "archivo"
+          );
+
+
+        return new Response(
+          storedFile,
+          {
+            status: 200,
+            headers: {
+              "content-type":
+                file.type ||
+                "application/octet-stream",
+
+              "content-length":
+                String(file.size || storedFile.byteLength),
+
+              "content-disposition":
+                `attachment; filename="${safeName}"`,
+
+              "cache-control":
+                "private, no-store"
+            }
+          }
+        );
+
+
+      } catch (error) {
+
+        return json(
+          {
+            message:
+              "No se pudo abrir el archivo."
+          },
+          500
+        );
+      }
+    }
+
+
+    // =========================
     // API — MENSAJES
     // =========================
 
     if (url.pathname === "/api/messages") {
-
-      // Limpiar mensajes de más de 3 días.
-      try {
-        await cleanupMessages(env.DB);
-      } catch (error) {
-        // Si falla la limpieza, continuar.
-      }
 
 
       // =========================
@@ -195,7 +321,8 @@ export default {
 
         try {
 
-          const form = await request.formData();
+          const form =
+            await request.formData();
 
 
           const category = clean(
@@ -254,7 +381,8 @@ export default {
           if (!isValidEmail(email)) {
             return json(
               {
-                message: "Ingresá un correo válido."
+                message:
+                  "Ingresá un correo válido."
               },
               400
             );
@@ -278,182 +406,248 @@ export default {
 
 
           // =========================
-          // ARCHIVO ADJUNTO
+          // ARCHIVOS
           // =========================
 
-          const attachment = form.get("attachment");
-
-          let attachmentName = "";
-          let attachmentType = "";
-          let attachmentSize = 0;
+          const attachments =
+            form.getAll("attachment");
 
 
-          if (
-            attachment &&
-            typeof attachment === "object" &&
-            "name" in attachment &&
-            attachment.name
-          ) {
-
-            attachmentName = String(
-              attachment.name || ""
-            );
-
-            attachmentType = String(
-              attachment.type || ""
-            );
-
-            attachmentSize = Number(
-              attachment.size || 0
-            );
+          const validFiles = [];
 
 
-            if (attachmentSize > 8 * 1024 * 1024) {
+          let totalSize = 0;
+
+
+          const MAX_TOTAL_SIZE =
+            8 * 1024 * 1024;
+
+
+          for (const attachment of attachments) {
+
+            if (
+              !attachment ||
+              typeof attachment !== "object" ||
+              !("name" in attachment) ||
+              !attachment.name
+            ) {
+              continue;
+            }
+
+
+            const fileName =
+              String(
+                attachment.name || ""
+              );
+
+
+            const fileType =
+              String(
+                attachment.type || ""
+              );
+
+
+            const fileSize =
+              Number(
+                attachment.size || 0
+              );
+
+
+            if (fileSize <= 0) {
+              continue;
+            }
+
+
+            totalSize += fileSize;
+
+
+            if (totalSize > MAX_TOTAL_SIZE) {
               return json(
                 {
                   message:
-                    "El archivo adjunto no puede superar los 8 MB."
+                    "El tamaño total de los archivos no puede superar los 8 MB."
                 },
                 400
               );
             }
+
+
+            validFiles.push({
+              originalFile: attachment,
+              name: fileName,
+              type: fileType,
+              size: fileSize
+            });
           }
 
 
           // =========================
-          // GUARDAR EN D1
+          // GUARDAR MENSAJE EN D1
           // =========================
 
           const createdAt =
             new Date().toISOString();
 
 
-          await env.DB
-            .prepare(`
-              INSERT INTO messages
-              (
+          const insertResult =
+            await env.DB
+              .prepare(`
+                INSERT INTO messages
+                (
+                  category,
+                  name,
+                  email,
+                  description,
+                  attachment_name,
+                  attachment_type,
+                  attachment_size,
+                  created_at
+                )
+                VALUES (?, ?, ?, ?, ?, ?, ?, ?)
+              `)
+              .bind(
                 category,
                 name,
                 email,
                 description,
-                attachment_name,
-                attachment_type,
-                attachment_size,
-                created_at
+                "[]",
+                "[]",
+                "[]",
+                createdAt
               )
-              VALUES (?, ?, ?, ?, ?, ?, ?, ?)
-            `)
-            .bind(
-              category,
-              name,
-              email,
-              description,
-              attachmentName,
-              attachmentType,
-              attachmentSize,
-              createdAt
-            )
-            .run();
+              .run();
+
+
+          const messageId =
+            Number(
+              insertResult.meta?.last_row_id
+            );
+
+
+          if (
+            !Number.isInteger(messageId) ||
+            messageId <= 0
+          ) {
+            throw new Error(
+              "No se pudo obtener el ID del mensaje."
+            );
+          }
 
 
           // =========================
-          // ENVIAR AVISO POR EMAIL
+          // GUARDAR ARCHIVOS EN KV
           // =========================
 
-          let emailSent = false;
+          const fileMetadata = [];
 
 
           try {
 
-            if (env.RESEND_API_KEY) {
+            for (
+              let index = 0;
+              index < validFiles.length;
+              index++
+            ) {
 
-              // Buscar el correo destinatario guardado
-              // desde el panel de administración.
-              let recipientEmail = "";
-
-
-              try {
-
-                const recipientRow = await env.DB
-                  .prepare(
-                    "SELECT state_value FROM site_state WHERE state_key = ?"
-                  )
-                  .bind("contactRecipientEmail")
-                  .first();
-
-                recipientEmail =
-                  clean(
-                    recipientRow?.state_value || ""
-                  );
-
-              } catch (error) {
-                recipientEmail = "";
-              }
+              const file =
+                validFiles[index];
 
 
-              // Si todavía no configuraste el correo
-              // desde el panel, no intentar enviar.
-              if (isValidEmail(recipientEmail)) {
-
-                // Dirección de envío.
-                // Si después configuramos un dominio propio,
-                // podremos cambiarla desde Cloudflare.
-                const fromEmail =
-                  env.RESEND_FROM_EMAIL ||
-                  "onboarding@resend.dev";
+              const key =
+                `message-${messageId}-file-${index}-${crypto.randomUUID()}`;
 
 
-                const emailResponse =
-                  await fetch(
-                    "https://api.resend.com/emails",
-                    {
-                      method: "POST",
-                      headers: {
-                        "Authorization":
-                          `Bearer ${env.RESEND_API_KEY}`,
-                        "Content-Type":
-                          "application/json"
-                      },
-                      body: JSON.stringify({
-                        from:
-                          `I.N STYLE <${fromEmail}>`,
-                        to: [recipientEmail],
-                        subject:
-                          `Nuevo mensaje de STAY — ${category}`,
-                        html: buildMessageEmail({
-                          category,
-                          name,
-                          email,
-                          description,
-                          attachmentName,
-                          attachmentType,
-                          attachmentSize,
-                          createdAt
-                        })
-                      })
-                    }
-                  );
+              const fileBuffer =
+                await file.originalFile.arrayBuffer();
 
 
-                if (emailResponse.ok) {
-                  emailSent = true;
+              await env.MESSAGE_FILES.put(
+                key,
+                fileBuffer,
+                {
+                  expirationTtl:
+                    60 * 60 * 24 * 30
                 }
+              );
 
-              }
+
+              fileMetadata.push({
+                key,
+                name: file.name,
+                type: file.type,
+                size: file.size
+              });
             }
 
-          } catch (emailError) {
 
-            // MUY IMPORTANTE:
-            // si el email falla, NO perder el mensaje.
-            emailSent = false;
+          } catch (fileError) {
 
+            // Si falla un archivo, eliminar
+            // los que ya hayan sido guardados.
+            for (const savedFile of fileMetadata) {
+              try {
+                await env.MESSAGE_FILES.delete(
+                  savedFile.key
+                );
+              } catch (error) {}
+            }
+
+
+            await env.DB
+              .prepare(
+                "DELETE FROM messages WHERE id = ?"
+              )
+              .bind(messageId)
+              .run();
+
+
+            throw fileError;
           }
+
+
+          // =========================
+          // GUARDAR METADATA DE ARCHIVOS
+          // =========================
+
+          const names =
+            fileMetadata.map(
+              file => file.name
+            );
+
+
+          const types =
+            fileMetadata.map(
+              file => file.type
+            );
+
+
+          const sizes =
+            fileMetadata.map(
+              file => file.size
+            );
+
+
+          await env.DB
+            .prepare(`
+              UPDATE messages
+              SET
+                attachment_name = ?,
+                attachment_type = ?,
+                attachment_size = ?
+              WHERE id = ?
+            `)
+            .bind(
+              JSON.stringify(names),
+              JSON.stringify(types),
+              JSON.stringify(sizes),
+              messageId
+            )
+            .run();
 
 
           return json({
             ok: true,
-            emailSent,
+            emailSent: false,
             message:
               "Mensaje recibido. El equipo de I.N STYLE lo verá pronto."
           });
@@ -488,26 +682,41 @@ export default {
 
         try {
 
-          const rows = await env.DB
-            .prepare(`
-              SELECT
-                id,
-                category,
-                name,
-                email,
-                description,
-                attachment_name,
-                attachment_type,
-                attachment_size,
-                created_at
-              FROM messages
-              ORDER BY created_at DESC
-            `)
-            .all();
+          const rows =
+            await env.DB
+              .prepare(`
+                SELECT
+                  id,
+                  category,
+                  name,
+                  email,
+                  description,
+                  attachment_name,
+                  attachment_type,
+                  attachment_size,
+                  created_at
+                FROM messages
+                ORDER BY created_at DESC
+              `)
+              .all();
+
+
+          const messages =
+            (rows.results || []).map(
+              row => ({
+                ...row,
+                attachments:
+                  parseAttachmentMetadata(
+                    row.attachment_name,
+                    row.attachment_type,
+                    row.attachment_size
+                  )
+              })
+            );
 
 
           return json({
-            messages: rows.results || []
+            messages
           });
 
 
@@ -525,7 +734,7 @@ export default {
 
 
       // =========================
-      // ELIMINAR MENSAJES
+      // ELIMINAR MENSAJE
       // SOLO ADMIN
       // =========================
 
@@ -540,12 +749,18 @@ export default {
 
         try {
 
-          const body = await request.json();
+          const body =
+            await request.json();
 
-          const id = Number(body.id);
+
+          const id =
+            Number(body.id);
 
 
-          if (!Number.isInteger(id) || id <= 0) {
+          if (
+            !Number.isInteger(id) ||
+            id <= 0
+          ) {
             return json(
               {
                 message:
@@ -556,6 +771,48 @@ export default {
           }
 
 
+          // Buscar archivos antes de eliminar
+          // el mensaje.
+          const row =
+            await env.DB
+              .prepare(`
+                SELECT
+                  attachment_name,
+                  attachment_type,
+                  attachment_size
+                FROM messages
+                WHERE id = ?
+              `)
+              .bind(id)
+              .first();
+
+
+          if (row) {
+
+            const files =
+              parseAttachmentMetadata(
+                row.attachment_name,
+                row.attachment_type,
+                row.attachment_size
+              );
+
+
+            // Eliminar archivos de KV
+            for (const file of files) {
+
+              if (file.key) {
+
+                try {
+                  await env.MESSAGE_FILES.delete(
+                    file.key
+                  );
+                } catch (error) {}
+              }
+            }
+          }
+
+
+          // Eliminar mensaje
           await env.DB
             .prepare(
               "DELETE FROM messages WHERE id = ?"
@@ -564,7 +821,9 @@ export default {
             .run();
 
 
-          return json({ ok: true });
+          return json({
+            ok: true
+          });
 
 
         } catch (error) {
@@ -596,13 +855,29 @@ export default {
     }
 
 
-    return new Response("I.N STYLE", {
-      status: 200,
-      headers: {
-        "content-type":
-          "text/plain; charset=UTF-8"
+    return new Response(
+      "I.N STYLE",
+      {
+        status: 200,
+        headers: {
+          "content-type":
+            "text/plain; charset=UTF-8"
+        }
       }
-    });
+    );
+  },
+
+
+  // =========================
+  // LIMPIEZA PROGRAMADA
+  // =========================
+
+  async scheduled(event, env, ctx) {
+
+    ctx.waitUntil(
+      cleanupWeeklyMessages(env)
+    );
+
   }
 };
 
@@ -612,7 +887,10 @@ export default {
 // ========================================
 
 
-function json(data, status = 200) {
+function json(
+  data,
+  status = 200
+) {
 
   return new Response(
     JSON.stringify(data),
@@ -621,7 +899,8 @@ function json(data, status = 200) {
       headers: {
         "content-type":
           "application/json; charset=UTF-8",
-        "cache-control": "no-store"
+        "cache-control":
+          "no-store"
       }
     }
   );
@@ -629,23 +908,30 @@ function json(data, status = 200) {
 
 
 // ========================================
-// VERIFICAR SESIÓN DE ADMINISTRACIÓN
+// VERIFICAR SESIÓN ADMIN
 // ========================================
 
-function isAdmin(request, env) {
+function isAdmin(
+  request,
+  env
+) {
 
   const cookieHeader =
     request.headers.get("Cookie") || "";
 
 
-  const sessionCookie = cookieHeader
-    .split(";")
-    .map(item => item.trim())
-    .find(item =>
-      item.startsWith(
-        "instyle_admin_session="
+  const sessionCookie =
+    cookieHeader
+      .split(";")
+      .map(
+        item => item.trim()
       )
-    );
+      .find(
+        item =>
+          item.startsWith(
+            "instyle_admin_session="
+          )
+      );
 
 
   if (
@@ -661,7 +947,8 @@ function isAdmin(request, env) {
     const sessionValue =
       decodeURIComponent(
         sessionCookie.slice(
-          "instyle_admin_session=".length
+          "instyle_admin_session="
+            .length
         )
       );
 
@@ -675,7 +962,6 @@ function isAdmin(request, env) {
   } catch (error) {
 
     return false;
-
   }
 }
 
@@ -710,124 +996,140 @@ function isValidEmail(email) {
 
 
 // ========================================
-// ESCAPAR HTML
+// LEER METADATA DE ARCHIVOS
 // ========================================
 
-function escapeHtml(value) {
+function parseAttachmentMetadata(
+  names,
+  types,
+  sizes
+) {
 
-  return String(value || "")
-    .replace(/&/g, "&amp;")
-    .replace(/</g, "&lt;")
-    .replace(/>/g, "&gt;")
-    .replace(/"/g, "&quot;")
-    .replace(/'/g, "&#039;");
+  try {
+
+    const parsedNames =
+      JSON.parse(
+        names || "[]"
+      );
+
+
+    const parsedTypes =
+      JSON.parse(
+        types || "[]"
+      );
+
+
+    const parsedSizes =
+      JSON.parse(
+        sizes || "[]"
+      );
+
+
+    if (
+      !Array.isArray(parsedNames) ||
+      !Array.isArray(parsedTypes) ||
+      !Array.isArray(parsedSizes)
+    ) {
+      return [];
+    }
+
+
+    return parsedNames.map(
+      (name, index) => {
+
+        return {
+          key: extractStoredKey(name),
+          name: getCleanFileName(name),
+          type:
+            parsedTypes[index] || "",
+          size:
+            Number(
+              parsedSizes[index] || 0
+            )
+        };
+
+      }
+    );
+
+
+  } catch (error) {
+
+    return [];
+  }
 }
 
 
 // ========================================
-// CONSTRUIR EMAIL
+// EXTRAER INFORMACIÓN DEL ARCHIVO
 // ========================================
 
-function buildMessageEmail(data) {
+function extractStoredKey(
+  value
+) {
 
-  const category =
-    escapeHtml(data.category);
-
-  const name =
-    escapeHtml(data.name || "No indicado");
-
-  const email =
-    escapeHtml(data.email);
-
-  const description =
-    escapeHtml(data.description)
-      .replace(/\n/g, "<br>");
+  const text =
+    String(value || "");
 
 
-  const attachment =
-    data.attachmentName
-      ? `
-        <p>
-          <strong>Archivo adjunto:</strong>
-          ${escapeHtml(data.attachmentName)}
-        </p>
-        <p>
-          <strong>Tipo:</strong>
-          ${escapeHtml(data.attachmentType || "No indicado")}
-        </p>
-        <p>
-          <strong>Tamaño:</strong>
-          ${formatFileSize(data.attachmentSize)}
-        </p>
-      `
-      : `
-        <p>
-          <strong>Archivo adjunto:</strong>
-          No adjuntó archivo.
-        </p>
-      `;
+  if (
+    text.includes("::KEY::")
+  ) {
+    return text.split(
+      "::KEY::"
+    )[1] || "";
+  }
 
 
-  return `
-    <div style="font-family:Arial,sans-serif;line-height:1.6;color:#222;">
-      <h2>Nuevo mensaje de STAY — I.N STYLE</h2>
-
-      <p>
-        <strong>Motivo:</strong>
-        ${category}
-      </p>
-
-      <p>
-        <strong>Nombre:</strong>
-        ${name}
-      </p>
-
-      <p>
-        <strong>Correo:</strong>
-        ${email}
-      </p>
-
-      <p>
-        <strong>Mensaje:</strong>
-      </p>
-
-      <div style="padding:15px;border:1px solid #ddd;border-radius:8px;">
-        ${description}
-      </div>
-
-      ${attachment}
-
-      <hr>
-
-      <p style="font-size:12px;color:#777;">
-        Este aviso fue generado automáticamente por I.N STYLE.
-      </p>
-    </div>
-  `;
+  return "";
 }
 
 
 // ========================================
-// TAMAÑO DE ARCHIVO
+// NOMBRE VISIBLE DEL ARCHIVO
 // ========================================
 
-function formatFileSize(bytes) {
+function getCleanFileName(
+  value
+) {
 
-  const size = Number(bytes || 0);
+  const text =
+    String(value || "");
 
-  if (!size) {
-    return "0 B";
+
+  if (
+    text.includes("::KEY::")
+  ) {
+    return text.split(
+      "::KEY::"
+    )[0];
   }
 
-  if (size < 1024) {
-    return `${size} B`;
-  }
 
-  if (size < 1024 * 1024) {
-    return `${(size / 1024).toFixed(1)} KB`;
-  }
+  return text;
+}
 
-  return `${(size / (1024 * 1024)).toFixed(1)} MB`;
+
+// ========================================
+// NOMBRE SEGURO PARA DESCARGA
+// ========================================
+
+function sanitizeFileName(
+  value
+) {
+
+  return String(value || "archivo")
+    .replace(
+      /[\\\/:*?"<>|]/g,
+      "_"
+    )
+    .replace(
+      /[\r\n]/g,
+      "_"
+    )
+    .slice(
+      0,
+      180
+    );
 }
 
 
@@ -872,8 +1174,10 @@ async function saveStateKey(
       VALUES (?, ?, ?)
       ON CONFLICT(state_key)
       DO UPDATE SET
-        state_value = excluded.state_value,
-        updated_at = excluded.updated_at
+        state_value =
+          excluded.state_value,
+        updated_at =
+          excluded.updated_at
     `)
     .bind(
       key,
@@ -885,22 +1189,61 @@ async function saveStateKey(
 
 
 // ========================================
-// ELIMINAR MENSAJES DE MÁS DE 3 DÍAS
+// LIMPIEZA SEMANAL
 // ========================================
 
-async function cleanupMessages(db) {
+async function cleanupWeeklyMessages(
+  env
+) {
 
-  const cutoff =
-    new Date(
-      Date.now() -
-      3 * 24 * 60 * 60 * 1000
-    ).toISOString();
+  const rows =
+    await env.DB
+      .prepare(`
+        SELECT
+          id,
+          attachment_name,
+          attachment_type,
+          attachment_size
+        FROM messages
+      `)
+      .all();
 
 
-  await db
-    .prepare(
-      "DELETE FROM messages WHERE created_at < ?"
-    )
-    .bind(cutoff)
-    .run();
+  for (
+    const row of
+      rows.results || []
+  ) {
+
+    const files =
+      parseAttachmentMetadata(
+        row.attachment_name,
+        row.attachment_type,
+        row.attachment_size
+      );
+
+
+    // Eliminar archivos
+    for (const file of files) {
+
+      if (file.key) {
+
+        try {
+
+          await env.MESSAGE_FILES.delete(
+            file.key
+          );
+
+        } catch (error) {}
+      }
+    }
+
+
+    // Eliminar mensaje
+    await env.DB
+      .prepare(
+        "DELETE FROM messages WHERE id = ?"
+      )
+      .bind(row.id)
+      .run();
+  }
 }
