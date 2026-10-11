@@ -168,7 +168,7 @@ export default {
 
 
     // =========================
-    // API — ARCHIVOS DE MENSAJES
+    // API — DESCARGAR ARCHIVO
     // =========================
 
     if (url.pathname === "/api/message-file") {
@@ -189,13 +189,15 @@ export default {
 
       try {
 
-        const messageId = Number(
-          url.searchParams.get("message")
-        );
+        const messageId =
+          Number(
+            url.searchParams.get("message")
+          );
 
-        const fileIndex = Number(
-          url.searchParams.get("file")
-        );
+        const fileIndex =
+          Number(
+            url.searchParams.get("file")
+          );
 
 
         if (
@@ -211,17 +213,15 @@ export default {
         }
 
 
-        const row = await env.DB
-          .prepare(`
-            SELECT
-              attachment_name,
-              attachment_type,
-              attachment_size
-            FROM messages
-            WHERE id = ?
-          `)
-          .bind(messageId)
-          .first();
+        const row =
+          await env.DB
+            .prepare(`
+              SELECT attachment_name
+              FROM messages
+              WHERE id = ?
+            `)
+            .bind(messageId)
+            .first();
 
 
         if (!row) {
@@ -232,14 +232,12 @@ export default {
         }
 
 
-        const files = parseAttachmentMetadata(
-          row.attachment_name,
-          row.attachment_type,
-          row.attachment_size
-        );
+        const files =
+          parseFiles(row.attachment_name);
 
 
-        const file = files[fileIndex];
+        const file =
+          files[fileIndex];
 
 
         if (!file || !file.key) {
@@ -253,13 +251,18 @@ export default {
         const storedFile =
           await env.MESSAGE_FILES.get(
             file.key,
-            { type: "arrayBuffer" }
+            {
+              type: "arrayBuffer"
+            }
           );
 
 
         if (!storedFile) {
           return json(
-            { message: "El archivo ya no está disponible." },
+            {
+              message:
+                "El archivo ya no está disponible."
+            },
             404
           );
         }
@@ -281,7 +284,10 @@ export default {
                 "application/octet-stream",
 
               "content-length":
-                String(file.size || storedFile.byteLength),
+                String(
+                  file.size ||
+                  storedFile.byteLength
+                ),
 
               "content-disposition":
                 `attachment; filename="${safeName}"`,
@@ -325,37 +331,42 @@ export default {
             await request.formData();
 
 
-          const category = clean(
-            form.get("category") ||
-            form.get("motivo") ||
-            form.get("categoria") ||
-            form.get("reason")
-          );
+          const category =
+            clean(
+              form.get("category") ||
+              form.get("motivo") ||
+              form.get("categoria") ||
+              form.get("reason")
+            );
 
 
-          const name = clean(
-            form.get("name") ||
-            form.get("nombre")
-          );
+          const name =
+            clean(
+              form.get("name") ||
+              form.get("nombre")
+            );
 
 
-          const email = clean(
-            form.get("email") ||
-            form.get("correo")
-          );
+          const email =
+            clean(
+              form.get("email") ||
+              form.get("correo")
+            );
 
 
-          const description = clean(
-            form.get("description") ||
-            form.get("descripcion") ||
-            form.get("mensaje")
-          );
+          const description =
+            clean(
+              form.get("description") ||
+              form.get("descripcion") ||
+              form.get("mensaje")
+            );
 
 
           // Campo trampa anti-bot
-          const honeypot = clean(
-            form.get("website")
-          );
+          const honeypot =
+            clean(
+              form.get("website")
+            );
 
 
           if (honeypot) {
@@ -367,7 +378,11 @@ export default {
           // VALIDACIONES
           // =========================
 
-          if (!category || !email || !description) {
+          if (
+            !category ||
+            !email ||
+            !description
+          ) {
             return json(
               {
                 message:
@@ -409,6 +424,15 @@ export default {
           // ARCHIVOS
           // =========================
 
+          /*
+            IMPORTANTE:
+            El input del formulario deberá usar
+            name="attachment" y multiple.
+
+            El límite es de 8 MB ENTRE TODOS
+            los archivos del mismo mensaje.
+          */
+
           const attachments =
             form.getAll("attachment");
 
@@ -423,7 +447,10 @@ export default {
             8 * 1024 * 1024;
 
 
-          for (const attachment of attachments) {
+          for (
+            const attachment
+            of attachments
+          ) {
 
             if (
               !attachment ||
@@ -461,7 +488,10 @@ export default {
             totalSize += fileSize;
 
 
-            if (totalSize > MAX_TOTAL_SIZE) {
+            if (
+              totalSize >
+              MAX_TOTAL_SIZE
+            ) {
               return json(
                 {
                   message:
@@ -473,10 +503,17 @@ export default {
 
 
             validFiles.push({
-              originalFile: attachment,
-              name: fileName,
-              type: fileType,
-              size: fileSize
+              originalFile:
+                attachment,
+
+              name:
+                fileName,
+
+              type:
+                fileType,
+
+              size:
+                fileSize
             });
           }
 
@@ -538,14 +575,15 @@ export default {
           // GUARDAR ARCHIVOS EN KV
           // =========================
 
-          const fileMetadata = [];
+          const savedFiles = [];
 
 
           try {
 
             for (
               let index = 0;
-              index < validFiles.length;
+              index <
+              validFiles.length;
               index++
             ) {
 
@@ -558,7 +596,8 @@ export default {
 
 
               const fileBuffer =
-                await file.originalFile.arrayBuffer();
+                await file.originalFile
+                  .arrayBuffer();
 
 
               await env.MESSAGE_FILES.put(
@@ -571,23 +610,30 @@ export default {
               );
 
 
-              fileMetadata.push({
+              savedFiles.push({
                 key,
-                name: file.name,
-                type: file.type,
-                size: file.size
+                name:
+                  file.name,
+                type:
+                  file.type,
+                size:
+                  file.size
               });
             }
 
 
           } catch (fileError) {
 
-            // Si falla un archivo, eliminar
-            // los que ya hayan sido guardados.
-            for (const savedFile of fileMetadata) {
+            // Si falla algún archivo,
+            // eliminar los anteriores.
+            for (
+              const file
+              of savedFiles
+            ) {
+
               try {
                 await env.MESSAGE_FILES.delete(
-                  savedFile.key
+                  file.key
                 );
               } catch (error) {}
             }
@@ -606,26 +652,8 @@ export default {
 
 
           // =========================
-          // GUARDAR METADATA DE ARCHIVOS
+          // GUARDAR METADATA
           // =========================
-
-          const names =
-            fileMetadata.map(
-              file => file.name
-            );
-
-
-          const types =
-            fileMetadata.map(
-              file => file.type
-            );
-
-
-          const sizes =
-            fileMetadata.map(
-              file => file.size
-            );
-
 
           await env.DB
             .prepare(`
@@ -637,17 +665,33 @@ export default {
               WHERE id = ?
             `)
             .bind(
-              JSON.stringify(names),
-              JSON.stringify(types),
-              JSON.stringify(sizes),
+              JSON.stringify(
+                savedFiles
+              ),
+              JSON.stringify(
+                savedFiles.map(
+                  file => file.type
+                )
+              ),
+              JSON.stringify(
+                savedFiles.map(
+                  file => file.size
+                )
+              ),
               messageId
             )
             .run();
 
 
+          // =========================
+          // RESPUESTA
+          // =========================
+
           return json({
             ok: true,
+
             emailSent: false,
+
             message:
               "Mensaje recibido. El equipo de I.N STYLE lo verá pronto."
           });
@@ -675,10 +719,14 @@ export default {
 
         if (!isAdmin(request, env)) {
           return json(
-            { message: "No autorizado." },
+            {
+              message:
+                "No autorizado."
+            },
             401
           );
         }
+
 
         try {
 
@@ -702,17 +750,17 @@ export default {
 
 
           const messages =
-            (rows.results || []).map(
-              row => ({
-                ...row,
-                attachments:
-                  parseAttachmentMetadata(
-                    row.attachment_name,
-                    row.attachment_type,
-                    row.attachment_size
-                  )
-              })
-            );
+            (rows.results || [])
+              .map(
+                row => ({
+                  ...row,
+
+                  attachments:
+                    parseFiles(
+                      row.attachment_name
+                    )
+                })
+              );
 
 
           return json({
@@ -742,10 +790,14 @@ export default {
 
         if (!isAdmin(request, env)) {
           return json(
-            { message: "No autorizado." },
+            {
+              message:
+                "No autorizado."
+            },
             401
           );
         }
+
 
         try {
 
@@ -771,15 +823,13 @@ export default {
           }
 
 
-          // Buscar archivos antes de eliminar
-          // el mensaje.
+          // Buscar archivos antes
+          // de eliminar el mensaje.
           const row =
             await env.DB
               .prepare(`
                 SELECT
-                  attachment_name,
-                  attachment_type,
-                  attachment_size
+                  attachment_name
                 FROM messages
                 WHERE id = ?
               `)
@@ -790,29 +840,35 @@ export default {
           if (row) {
 
             const files =
-              parseAttachmentMetadata(
-                row.attachment_name,
-                row.attachment_type,
-                row.attachment_size
+              parseFiles(
+                row.attachment_name
               );
 
 
-            // Eliminar archivos de KV
-            for (const file of files) {
+            // Eliminar archivos de KV.
+            for (
+              const file
+              of files
+            ) {
 
-              if (file.key) {
+              if (!file.key) {
+                continue;
+              }
 
-                try {
-                  await env.MESSAGE_FILES.delete(
+
+              try {
+
+                await env.MESSAGE_FILES
+                  .delete(
                     file.key
                   );
-                } catch (error) {}
-              }
+
+              } catch (error) {}
             }
           }
 
 
-          // Eliminar mensaje
+          // Eliminar mensaje de D1.
           await env.DB
             .prepare(
               "DELETE FROM messages WHERE id = ?"
@@ -840,7 +896,10 @@ export default {
 
 
       return json(
-        { message: "Método no permitido." },
+        {
+          message:
+            "Método no permitido."
+        },
         405
       );
     }
@@ -872,20 +931,22 @@ export default {
   // LIMPIEZA PROGRAMADA
   // =========================
 
-  async scheduled(event, env, ctx) {
+  async scheduled(
+    event,
+    env,
+    ctx
+  ) {
 
     ctx.waitUntil(
       cleanupWeeklyMessages(env)
     );
-
   }
 };
 
 
 // ========================================
-// FUNCIONES AUXILIARES
+// RESPUESTA JSON
 // ========================================
-
 
 function json(
   data,
@@ -896,9 +957,11 @@ function json(
     JSON.stringify(data),
     {
       status,
+
       headers: {
         "content-type":
           "application/json; charset=UTF-8",
+
         "cache-control":
           "no-store"
       }
@@ -908,7 +971,7 @@ function json(
 
 
 // ========================================
-// VERIFICAR SESIÓN ADMIN
+// VERIFICAR ADMIN
 // ========================================
 
 function isAdmin(
@@ -917,14 +980,17 @@ function isAdmin(
 ) {
 
   const cookieHeader =
-    request.headers.get("Cookie") || "";
+    request.headers.get(
+      "Cookie"
+    ) || "";
 
 
   const sessionCookie =
     cookieHeader
       .split(";")
       .map(
-        item => item.trim()
+        item =>
+          item.trim()
       )
       .find(
         item =>
@@ -970,7 +1036,9 @@ function isAdmin(
 // LIMPIAR TEXTO
 // ========================================
 
-function clean(value) {
+function clean(
+  value
+) {
 
   if (
     value === null ||
@@ -979,7 +1047,10 @@ function clean(value) {
     return "";
   }
 
-  return String(value).trim();
+
+  return String(
+    value
+  ).trim();
 }
 
 
@@ -987,68 +1058,60 @@ function clean(value) {
 // VALIDAR CORREO
 // ========================================
 
-function isValidEmail(email) {
+function isValidEmail(
+  email
+) {
 
-  return /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(
-    email
-  );
+  return /^[^\s@]+@[^\s@]+\.[^\s@]+$/
+    .test(email);
 }
 
 
 // ========================================
-// LEER METADATA DE ARCHIVOS
+// LEER ARCHIVOS
 // ========================================
 
-function parseAttachmentMetadata(
-  names,
-  types,
-  sizes
+function parseFiles(
+  value
 ) {
 
   try {
 
-    const parsedNames =
+    const parsed =
       JSON.parse(
-        names || "[]"
-      );
-
-
-    const parsedTypes =
-      JSON.parse(
-        types || "[]"
-      );
-
-
-    const parsedSizes =
-      JSON.parse(
-        sizes || "[]"
+        value || "[]"
       );
 
 
     if (
-      !Array.isArray(parsedNames) ||
-      !Array.isArray(parsedTypes) ||
-      !Array.isArray(parsedSizes)
+      !Array.isArray(parsed)
     ) {
       return [];
     }
 
 
-    return parsedNames.map(
-      (name, index) => {
+    return parsed.map(
+      file => ({
+        key:
+          String(
+            file.key || ""
+          ),
 
-        return {
-          key: extractStoredKey(name),
-          name: getCleanFileName(name),
-          type:
-            parsedTypes[index] || "",
-          size:
-            Number(
-              parsedSizes[index] || 0
-            )
-        };
+        name:
+          String(
+            file.name || ""
+          ),
 
-      }
+        type:
+          String(
+            file.type || ""
+          ),
+
+        size:
+          Number(
+            file.size || 0
+          )
+      })
     );
 
 
@@ -1060,64 +1123,16 @@ function parseAttachmentMetadata(
 
 
 // ========================================
-// EXTRAER INFORMACIÓN DEL ARCHIVO
-// ========================================
-
-function extractStoredKey(
-  value
-) {
-
-  const text =
-    String(value || "");
-
-
-  if (
-    text.includes("::KEY::")
-  ) {
-    return text.split(
-      "::KEY::"
-    )[1] || "";
-  }
-
-
-  return "";
-}
-
-
-// ========================================
-// NOMBRE VISIBLE DEL ARCHIVO
-// ========================================
-
-function getCleanFileName(
-  value
-) {
-
-  const text =
-    String(value || "");
-
-
-  if (
-    text.includes("::KEY::")
-  ) {
-    return text.split(
-      "::KEY::"
-    )[0];
-  }
-
-
-  return text;
-}
-
-
-// ========================================
-// NOMBRE SEGURO PARA DESCARGA
+// NOMBRE SEGURO
 // ========================================
 
 function sanitizeFileName(
   value
 ) {
 
-  return String(value || "archivo")
+  return String(
+    value || "archivo"
+  )
     .replace(
       /[\\\/:*?"<>|]/g,
       "_"
@@ -1134,7 +1149,7 @@ function sanitizeFileName(
 
 
 // ========================================
-// GUARDAR ESTADO DEL SITIO
+// GUARDAR ESTADO
 // ========================================
 
 async function saveStateKey(
@@ -1150,7 +1165,9 @@ async function saveStateKey(
       : String(value);
 
 
-  if (stateValue === null) {
+  if (
+    stateValue === null
+  ) {
 
     await db
       .prepare(
@@ -1172,10 +1189,12 @@ async function saveStateKey(
         updated_at
       )
       VALUES (?, ?, ?)
+
       ON CONFLICT(state_key)
       DO UPDATE SET
         state_value =
           excluded.state_value,
+
         updated_at =
           excluded.updated_at
     `)
@@ -1201,44 +1220,46 @@ async function cleanupWeeklyMessages(
       .prepare(`
         SELECT
           id,
-          attachment_name,
-          attachment_type,
-          attachment_size
+          attachment_name
         FROM messages
       `)
       .all();
 
 
   for (
-    const row of
-      rows.results || []
+    const row
+    of rows.results || []
   ) {
 
     const files =
-      parseAttachmentMetadata(
-        row.attachment_name,
-        row.attachment_type,
-        row.attachment_size
+      parseFiles(
+        row.attachment_name
       );
 
 
-    // Eliminar archivos
-    for (const file of files) {
+    // Eliminar archivos.
+    for (
+      const file
+      of files
+    ) {
 
-      if (file.key) {
+      if (!file.key) {
+        continue;
+      }
 
-        try {
 
-          await env.MESSAGE_FILES.delete(
+      try {
+
+        await env.MESSAGE_FILES
+          .delete(
             file.key
           );
 
-        } catch (error) {}
-      }
+      } catch (error) {}
     }
 
 
-    // Eliminar mensaje
+    // Eliminar mensaje.
     await env.DB
       .prepare(
         "DELETE FROM messages WHERE id = ?"
