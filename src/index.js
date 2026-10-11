@@ -7,7 +7,6 @@ export default {
     // =========================
 
     if (url.pathname === "/api/state") {
-      // Leer estado público
       if (request.method === "GET") {
         try {
           const rows = await env.DB
@@ -29,7 +28,6 @@ export default {
         }
       }
 
-      // Guardar estado — solo administración
       if (request.method === "POST") {
         if (!isAdmin(request)) {
           return json({ message: "No autorizado." }, 401);
@@ -38,13 +36,11 @@ export default {
         try {
           const body = await request.json();
 
-          // Guardado de una sola clave
           if (body.key) {
             await saveStateKey(env.DB, body.key, body.value);
             return json({ ok: true });
           }
 
-          // Guardado completo
           if (body.state && typeof body.state === "object") {
             for (const [key, value] of Object.entries(body.state)) {
               await saveStateKey(env.DB, key, value);
@@ -70,19 +66,41 @@ export default {
     // =========================
 
     if (url.pathname === "/api/messages") {
-
       // Limpiar mensajes con más de 3 días
-      await cleanupMessages(env.DB);
+      try {
+        await cleanupMessages(env.DB);
+      } catch (error) {
+        // Si falla la limpieza, continuar con la solicitud.
+      }
 
-      // Enviar mensaje desde el formulario
+      // Recibir mensajes del formulario
       if (request.method === "POST") {
         try {
           const form = await request.formData();
 
-          const category = clean(form.get("category"));
-          const name = clean(form.get("name"));
-          const email = clean(form.get("email"));
-          const description = clean(form.get("description"));
+          // Aceptar diferentes nombres para los campos
+          const category = clean(
+            form.get("category") ||
+            form.get("motivo") ||
+            form.get("categoria") ||
+            form.get("reason")
+          );
+
+          const name = clean(
+            form.get("name") ||
+            form.get("nombre")
+          );
+
+          const email = clean(
+            form.get("email") ||
+            form.get("correo")
+          );
+
+          const description = clean(
+            form.get("description") ||
+            form.get("descripcion") ||
+            form.get("mensaje")
+          );
 
           // Campo trampa anti-bot
           const honeypot = clean(form.get("website"));
@@ -91,6 +109,7 @@ export default {
             return json({ ok: true });
           }
 
+          // Validar campos obligatorios
           if (!category || !email || !description) {
             return json(
               {
@@ -108,7 +127,7 @@ export default {
             );
           }
 
-          // Límite de seguridad para texto
+          // Límites de seguridad
           if (
             category.length > 200 ||
             name.length > 200 ||
@@ -121,7 +140,7 @@ export default {
             );
           }
 
-          // Adjuntos
+          // Datos del archivo adjunto
           const attachment = form.get("attachment");
 
           let attachmentName = "";
@@ -131,13 +150,14 @@ export default {
           if (
             attachment &&
             typeof attachment === "object" &&
-            "name" in attachment
+            "name" in attachment &&
+            attachment.name
           ) {
             attachmentName = String(attachment.name || "");
             attachmentType = String(attachment.type || "");
             attachmentSize = Number(attachment.size || 0);
 
-            // 8 MB máximo
+            // Máximo: 8 MB
             if (attachmentSize > 8 * 1024 * 1024) {
               return json(
                 {
@@ -149,6 +169,7 @@ export default {
             }
           }
 
+          // Guardar el mensaje en D1
           await env.DB
             .prepare(`
               INSERT INTO messages
@@ -176,17 +197,14 @@ export default {
             )
             .run();
 
-          /*
-           * El envío real de correo todavía no está conectado.
-           * Más adelante agregaremos el proveedor de email.
-           */
-
+          // El correo electrónico todavía no está configurado
           return json({
             ok: true,
             emailSent: false,
             message:
               "Mensaje recibido. El equipo de I.N STYLE lo verá pronto."
           });
+
         } catch (error) {
           return json(
             {
@@ -198,7 +216,11 @@ export default {
         }
       }
 
-      // Ver mensajes desde administración
+      // =========================
+      // CONSULTAR MENSAJES
+      // Solo administración
+      // =========================
+
       if (request.method === "GET") {
         if (!isAdmin(request)) {
           return json({ message: "No autorizado." }, 401);
@@ -225,6 +247,7 @@ export default {
           return json({
             messages: rows.results || []
           });
+
         } catch (error) {
           return json(
             { message: "No se pudieron cargar los mensajes." },
@@ -233,7 +256,11 @@ export default {
         }
       }
 
-      // Eliminar mensaje manualmente
+      // =========================
+      // ELIMINAR MENSAJES
+      // Solo administración
+      // =========================
+
       if (request.method === "DELETE") {
         if (!isAdmin(request)) {
           return json({ message: "No autorizado." }, 401);
@@ -256,6 +283,7 @@ export default {
             .run();
 
           return json({ ok: true });
+
         } catch (error) {
           return json(
             { message: "No se pudo eliminar el mensaje." },
@@ -271,7 +299,6 @@ export default {
     // ARCHIVOS DEL SITIO
     // =========================
 
-    // Todo lo que no sea /api/* se sirve desde public/
     if (env.ASSETS) {
       return env.ASSETS.fetch(request);
     }
@@ -301,6 +328,7 @@ function json(data, status = 200) {
 }
 
 
+// Acceso de administración
 function isAdmin(request) {
   return (
     request.headers.get("X-INSTYLE-ADMIN") ===
@@ -309,6 +337,7 @@ function isAdmin(request) {
 }
 
 
+// Limpiar texto
 function clean(value) {
   if (value === null || value === undefined) {
     return "";
@@ -318,11 +347,13 @@ function clean(value) {
 }
 
 
+// Validar correo electrónico
 function isValidEmail(email) {
   return /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email);
 }
 
 
+// Guardar estado del sitio
 async function saveStateKey(db, key, value) {
   const stateValue =
     value === null || value === undefined
@@ -361,6 +392,7 @@ async function saveStateKey(db, key, value) {
 }
 
 
+// Eliminar mensajes de más de 3 días
 async function cleanupMessages(db) {
   const cutoff = new Date(
     Date.now() - 3 * 24 * 60 * 60 * 1000
