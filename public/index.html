@@ -6484,48 +6484,37 @@ document.addEventListener('DOMContentLoaded',function(){
 // I.N STYLE — MENSAJES RECIBIDOS
 // ========================================
 
+
 (function () {
   const button = document.getElementById("loadStayMessages");
   const container = document.getElementById("stayMessagesList");
 
-  if (!button || !container) {
-    console.warn("No se encontró el botón o la lista de mensajes.");
-    return;
-  }
+  if (!button || !container) return;
 
-  // Crear elementos de texto de forma segura
+  let adminLoggedIn = false;
+
   function addText(parent, tag, value) {
-    const element = document.createElement(tag);
-    element.textContent = value || "";
-    parent.appendChild(element);
-    return element;
+    const el = document.createElement(tag);
+    el.textContent = value || "";
+    parent.appendChild(el);
+    return el;
   }
 
-  // Mostrar información de cada mensaje
   function renderMessages(messages) {
     container.replaceChildren();
 
     if (!messages.length) {
-      addText(
-        container,
-        "p",
-        "Todavía no hay mensajes recibidos."
-      );
+      addText(container, "p", "Todavía no hay mensajes recibidos.");
       return;
     }
 
     messages.forEach(function (message) {
       const card = document.createElement("article");
 
-      card.style.cssText = [
-        "padding:16px",
-        "margin:14px 0",
-        "border:1px solid #c9b27c",
-        "border-radius:10px",
-        "background:#fffdf8",
-        "color:#24211d",
-        "overflow-wrap:anywhere"
-      ].join(";");
+      card.style.cssText =
+        "padding:16px;margin:14px 0;border:1px solid #c9b27c;" +
+        "border-radius:10px;background:#fffdf8;color:#24211d;" +
+        "overflow-wrap:anywhere";
 
       addText(card, "h4", message.category || "Consulta");
       addText(card, "p", "Nombre: " + (message.name || "No indicado"));
@@ -6545,43 +6534,66 @@ document.addEventListener('DOMContentLoaded',function(){
       description.textContent = "Mensaje: " + (message.description || "");
       card.appendChild(description);
 
-      if (message.attachment_name) {
-        addText(
-          card,
-          "p",
-          "Archivo adjunto: " +
-            message.attachment_name +
-            " (" +
-            Math.round((message.attachment_size || 0) / 1024) +
-            " KB)"
-        );
+      // Archivos adjuntos: permite mostrar uno o varios.
+      let files = message.attachments || [];
 
-        addText(
-          card,
-          "p",
-          "Nota: el formulario guarda los datos del archivo, pero no el archivo en sí."
-        );
+      if (!Array.isArray(files)) files = [];
+
+      // Compatibilidad con mensajes antiguos que guardaban un único nombre.
+      if (!files.length && message.attachment_name) {
+        try {
+          const parsed = JSON.parse(message.attachment_name);
+          files = Array.isArray(parsed)
+            ? parsed
+            : [{ name: message.attachment_name }];
+        } catch (e) {
+          files = [{ name: message.attachment_name }];
+        }
+      }
+
+      if (files.length) {
+        addText(card, "h4", "ARCHIVOS ADJUNTOS");
+
+        files.forEach(function (file, index) {
+          const name = typeof file === "string"
+            ? file
+            : (file.name || file.filename || ("Archivo " + (index + 1)));
+
+          const link = document.createElement("a");
+          link.textContent = "⬇ DESCARGAR: " + name;
+          link.href =
+            "/api/message-file?message=" +
+            encodeURIComponent(message.id) +
+            "&file=" + index;
+
+          link.target = "_blank";
+          link.rel = "noopener";
+          link.style.cssText =
+            "display:block;margin:10px 0;padding:10px;" +
+            "border:1px solid #c9b27c;color:#5b4630;" +
+            "overflow-wrap:anywhere";
+
+          card.appendChild(link);
+
+          if (file && typeof file === "object" && file.size) {
+            addText(
+              card,
+              "small",
+              Math.max(1, Math.round(file.size / 1024)) + " KB"
+            );
+          }
+        });
       }
 
       const deleteButton = document.createElement("button");
       deleteButton.type = "button";
       deleteButton.textContent = "ELIMINAR MENSAJE";
-
-      deleteButton.style.cssText = [
-        "padding:10px 14px",
-        "border:0",
-        "border-radius:6px",
-        "background:#5b2929",
-        "color:white",
-        "cursor:pointer"
-      ].join(";");
+      deleteButton.style.cssText =
+        "padding:10px 14px;border:0;border-radius:6px;" +
+        "background:#5b2929;color:white;cursor:pointer";
 
       deleteButton.addEventListener("click", async function () {
-        const confirmed = confirm(
-          "¿Querés eliminar este mensaje? Esta acción no se puede deshacer."
-        );
-
-        if (!confirmed) return;
+        if (!confirm("¿Eliminar este mensaje y sus archivos adjuntos?")) return;
 
         deleteButton.disabled = true;
         deleteButton.textContent = "ELIMINANDO...";
@@ -6590,24 +6602,17 @@ document.addEventListener('DOMContentLoaded',function(){
           const response = await fetch("/api/messages", {
             method: "DELETE",
             credentials: "same-origin",
-            headers: {
-              "Content-Type": "application/json"
-            },
-            body: JSON.stringify({
-              id: message.id
-            })
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({ id: message.id })
           });
 
           const result = await response.json();
 
           if (!response.ok) {
-            throw new Error(
-              result.message || "No se pudo eliminar el mensaje."
-            );
+            throw new Error(result.message || "No se pudo eliminar el mensaje.");
           }
 
           await loadMessages(false);
-
         } catch (error) {
           alert(error.message || "Ocurrió un error.");
           deleteButton.disabled = false;
@@ -6620,39 +6625,32 @@ document.addEventListener('DOMContentLoaded',function(){
     });
   }
 
-  // Consultar los mensajes
   async function loadMessages(askForSecret) {
     button.disabled = true;
     button.textContent = "CARGANDO MENSAJES...";
 
     try {
-      if (askForSecret) {
+      if (askForSecret && !adminLoggedIn) {
         const secret = prompt(
           "Ingresá la clave privada de administración configurada en Cloudflare."
         );
 
-        if (secret === null || !secret.trim()) {
-          return;
-        }
+        if (secret === null || !secret.trim()) return;
 
         const loginResponse = await fetch("/api/admin-login", {
           method: "POST",
           credentials: "same-origin",
-          headers: {
-            "Content-Type": "application/json"
-          },
-          body: JSON.stringify({
-            secret: secret
-          })
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ secret: secret })
         });
 
         const loginResult = await loginResponse.json();
 
         if (!loginResponse.ok) {
-          throw new Error(
-            loginResult.message || "No se pudo iniciar sesión."
-          );
+          throw new Error(loginResult.message || "No se pudo iniciar sesión.");
         }
+
+        adminLoggedIn = true;
       }
 
       const response = await fetch("/api/messages", {
@@ -6664,22 +6662,13 @@ document.addEventListener('DOMContentLoaded',function(){
       const result = await response.json();
 
       if (!response.ok) {
-        throw new Error(
-          result.message || "No se pudieron cargar los mensajes."
-        );
+        throw new Error(result.message || "No se pudieron cargar los mensajes.");
       }
 
       renderMessages(result.messages || []);
-
     } catch (error) {
       container.replaceChildren();
-
-      addText(
-        container,
-        "p",
-        error.message || "Ocurrió un error al cargar los mensajes."
-      );
-
+      addText(container, "p", error.message || "Ocurrió un error al cargar los mensajes.");
     } finally {
       button.disabled = false;
       button.textContent = "VER MENSAJES RECIBIDOS";
@@ -6690,6 +6679,7 @@ document.addEventListener('DOMContentLoaded',function(){
     loadMessages(true);
   });
 })();
+  
 </script>
 </body>
 </html>
