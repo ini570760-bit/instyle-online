@@ -58,6 +58,7 @@ export default {
       }
     }
 
+
     // =========================
     // API — CERRAR SESIÓN ADMIN
     // =========================
@@ -77,11 +78,13 @@ export default {
       );
     }
 
+
     // =========================
     // API — ESTADO DEL SITIO
     // =========================
 
     if (url.pathname === "/api/state") {
+
       if (request.method === "GET") {
         try {
           const rows = await env.DB
@@ -108,7 +111,9 @@ export default {
         }
       }
 
+
       if (request.method === "POST") {
+
         if (!isAdmin(request, env)) {
           return json(
             { message: "No autorizado." },
@@ -160,11 +165,13 @@ export default {
         }
       }
 
+
       return json(
         { message: "Método no permitido." },
         405
       );
     }
+
 
     // =========================
     // API — MENSAJES
@@ -172,22 +179,24 @@ export default {
 
     if (url.pathname === "/api/messages") {
 
-      // Limpiar mensajes con más de 3 días.
-      // Si falla la limpieza, continuar.
+      // Limpiar mensajes de más de 3 días.
       try {
         await cleanupMessages(env.DB);
       } catch (error) {
-        // No interrumpir la solicitud.
+        // Si falla la limpieza, continuar.
       }
+
 
       // =========================
       // RECIBIR MENSAJES
-      // Formulario público
       // =========================
 
       if (request.method === "POST") {
+
         try {
+
           const form = await request.formData();
+
 
           const category = clean(
             form.get("category") ||
@@ -196,15 +205,18 @@ export default {
             form.get("reason")
           );
 
+
           const name = clean(
             form.get("name") ||
             form.get("nombre")
           );
 
+
           const email = clean(
             form.get("email") ||
             form.get("correo")
           );
+
 
           const description = clean(
             form.get("description") ||
@@ -212,16 +224,22 @@ export default {
             form.get("mensaje")
           );
 
+
           // Campo trampa anti-bot
           const honeypot = clean(
             form.get("website")
           );
 
+
           if (honeypot) {
             return json({ ok: true });
           }
 
-          // Validar campos obligatorios
+
+          // =========================
+          // VALIDACIONES
+          // =========================
+
           if (!category || !email || !description) {
             return json(
               {
@@ -232,6 +250,7 @@ export default {
             );
           }
 
+
           if (!isValidEmail(email)) {
             return json(
               {
@@ -241,7 +260,7 @@ export default {
             );
           }
 
-          // Límites de seguridad
+
           if (
             category.length > 200 ||
             name.length > 200 ||
@@ -257,12 +276,17 @@ export default {
             );
           }
 
-          // Datos del archivo adjunto
+
+          // =========================
+          // ARCHIVO ADJUNTO
+          // =========================
+
           const attachment = form.get("attachment");
 
           let attachmentName = "";
           let attachmentType = "";
           let attachmentSize = 0;
+
 
           if (
             attachment &&
@@ -270,6 +294,7 @@ export default {
             "name" in attachment &&
             attachment.name
           ) {
+
             attachmentName = String(
               attachment.name || ""
             );
@@ -282,7 +307,7 @@ export default {
               attachment.size || 0
             );
 
-            // Máximo: 8 MB
+
             if (attachmentSize > 8 * 1024 * 1024) {
               return json(
                 {
@@ -294,7 +319,15 @@ export default {
             }
           }
 
-          // Guardar el mensaje en D1
+
+          // =========================
+          // GUARDAR EN D1
+          // =========================
+
+          const createdAt =
+            new Date().toISOString();
+
+
           await env.DB
             .prepare(`
               INSERT INTO messages
@@ -318,18 +351,116 @@ export default {
               attachmentName,
               attachmentType,
               attachmentSize,
-              new Date().toISOString()
+              createdAt
             )
             .run();
 
+
+          // =========================
+          // ENVIAR AVISO POR EMAIL
+          // =========================
+
+          let emailSent = false;
+
+
+          try {
+
+            if (env.RESEND_API_KEY) {
+
+              // Buscar el correo destinatario guardado
+              // desde el panel de administración.
+              let recipientEmail = "";
+
+
+              try {
+
+                const recipientRow = await env.DB
+                  .prepare(
+                    "SELECT state_value FROM site_state WHERE state_key = ?"
+                  )
+                  .bind("contactRecipientEmail")
+                  .first();
+
+                recipientEmail =
+                  clean(
+                    recipientRow?.state_value || ""
+                  );
+
+              } catch (error) {
+                recipientEmail = "";
+              }
+
+
+              // Si todavía no configuraste el correo
+              // desde el panel, no intentar enviar.
+              if (isValidEmail(recipientEmail)) {
+
+                // Dirección de envío.
+                // Si después configuramos un dominio propio,
+                // podremos cambiarla desde Cloudflare.
+                const fromEmail =
+                  env.RESEND_FROM_EMAIL ||
+                  "onboarding@resend.dev";
+
+
+                const emailResponse =
+                  await fetch(
+                    "https://api.resend.com/emails",
+                    {
+                      method: "POST",
+                      headers: {
+                        "Authorization":
+                          `Bearer ${env.RESEND_API_KEY}`,
+                        "Content-Type":
+                          "application/json"
+                      },
+                      body: JSON.stringify({
+                        from:
+                          `I.N STYLE <${fromEmail}>`,
+                        to: [recipientEmail],
+                        subject:
+                          `Nuevo mensaje de STAY — ${category}`,
+                        html: buildMessageEmail({
+                          category,
+                          name,
+                          email,
+                          description,
+                          attachmentName,
+                          attachmentType,
+                          attachmentSize,
+                          createdAt
+                        })
+                      })
+                    }
+                  );
+
+
+                if (emailResponse.ok) {
+                  emailSent = true;
+                }
+
+              }
+            }
+
+          } catch (emailError) {
+
+            // MUY IMPORTANTE:
+            // si el email falla, NO perder el mensaje.
+            emailSent = false;
+
+          }
+
+
           return json({
             ok: true,
-            emailSent: false,
+            emailSent,
             message:
               "Mensaje recibido. El equipo de I.N STYLE lo verá pronto."
           });
 
+
         } catch (error) {
+
           return json(
             {
               message:
@@ -340,12 +471,14 @@ export default {
         }
       }
 
+
       // =========================
       // CONSULTAR MENSAJES
-      // Solo administración
+      // SOLO ADMIN
       // =========================
 
       if (request.method === "GET") {
+
         if (!isAdmin(request, env)) {
           return json(
             { message: "No autorizado." },
@@ -354,6 +487,7 @@ export default {
         }
 
         try {
+
           const rows = await env.DB
             .prepare(`
               SELECT
@@ -371,11 +505,14 @@ export default {
             `)
             .all();
 
+
           return json({
             messages: rows.results || []
           });
 
+
         } catch (error) {
+
           return json(
             {
               message:
@@ -386,12 +523,14 @@ export default {
         }
       }
 
+
       // =========================
       // ELIMINAR MENSAJES
-      // Solo administración
+      // SOLO ADMIN
       // =========================
 
       if (request.method === "DELETE") {
+
         if (!isAdmin(request, env)) {
           return json(
             { message: "No autorizado." },
@@ -400,17 +539,22 @@ export default {
         }
 
         try {
+
           const body = await request.json();
+
           const id = Number(body.id);
+
 
           if (!Number.isInteger(id) || id <= 0) {
             return json(
               {
-                message: "ID de mensaje inválido."
+                message:
+                  "ID de mensaje inválido."
               },
               400
             );
           }
+
 
           await env.DB
             .prepare(
@@ -419,9 +563,12 @@ export default {
             .bind(id)
             .run();
 
+
           return json({ ok: true });
 
+
         } catch (error) {
+
           return json(
             {
               message:
@@ -432,11 +579,13 @@ export default {
         }
       }
 
+
       return json(
         { message: "Método no permitido." },
         405
       );
     }
+
 
     // =========================
     // ARCHIVOS DEL SITIO
@@ -446,10 +595,12 @@ export default {
       return env.ASSETS.fetch(request);
     }
 
+
     return new Response("I.N STYLE", {
       status: 200,
       headers: {
-        "content-type": "text/plain; charset=UTF-8"
+        "content-type":
+          "text/plain; charset=UTF-8"
       }
     });
   }
@@ -460,7 +611,9 @@ export default {
 // FUNCIONES AUXILIARES
 // ========================================
 
+
 function json(data, status = 200) {
+
   return new Response(
     JSON.stringify(data),
     {
@@ -480,31 +633,49 @@ function json(data, status = 200) {
 // ========================================
 
 function isAdmin(request, env) {
+
   const cookieHeader =
     request.headers.get("Cookie") || "";
+
 
   const sessionCookie = cookieHeader
     .split(";")
     .map(item => item.trim())
     .find(item =>
-      item.startsWith("instyle_admin_session=")
-    );
-
-  if (!env.INSTYLE_ADMIN_SECRET || !sessionCookie) {
-    return false;
-  }
-
-  try {
-    const sessionValue = decodeURIComponent(
-      sessionCookie.slice(
-        "instyle_admin_session=".length
+      item.startsWith(
+        "instyle_admin_session="
       )
     );
 
-    return sessionValue === env.INSTYLE_ADMIN_SECRET;
+
+  if (
+    !env.INSTYLE_ADMIN_SECRET ||
+    !sessionCookie
+  ) {
+    return false;
+  }
+
+
+  try {
+
+    const sessionValue =
+      decodeURIComponent(
+        sessionCookie.slice(
+          "instyle_admin_session=".length
+        )
+      );
+
+
+    return (
+      sessionValue ===
+      env.INSTYLE_ADMIN_SECRET
+    );
+
 
   } catch (error) {
+
     return false;
+
   }
 }
 
@@ -514,7 +685,11 @@ function isAdmin(request, env) {
 // ========================================
 
 function clean(value) {
-  if (value === null || value === undefined) {
+
+  if (
+    value === null ||
+    value === undefined
+  ) {
     return "";
   }
 
@@ -527,7 +702,132 @@ function clean(value) {
 // ========================================
 
 function isValidEmail(email) {
-  return /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email);
+
+  return /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(
+    email
+  );
+}
+
+
+// ========================================
+// ESCAPAR HTML
+// ========================================
+
+function escapeHtml(value) {
+
+  return String(value || "")
+    .replace(/&/g, "&amp;")
+    .replace(/</g, "&lt;")
+    .replace(/>/g, "&gt;")
+    .replace(/"/g, "&quot;")
+    .replace(/'/g, "&#039;");
+}
+
+
+// ========================================
+// CONSTRUIR EMAIL
+// ========================================
+
+function buildMessageEmail(data) {
+
+  const category =
+    escapeHtml(data.category);
+
+  const name =
+    escapeHtml(data.name || "No indicado");
+
+  const email =
+    escapeHtml(data.email);
+
+  const description =
+    escapeHtml(data.description)
+      .replace(/\n/g, "<br>");
+
+
+  const attachment =
+    data.attachmentName
+      ? `
+        <p>
+          <strong>Archivo adjunto:</strong>
+          ${escapeHtml(data.attachmentName)}
+        </p>
+        <p>
+          <strong>Tipo:</strong>
+          ${escapeHtml(data.attachmentType || "No indicado")}
+        </p>
+        <p>
+          <strong>Tamaño:</strong>
+          ${formatFileSize(data.attachmentSize)}
+        </p>
+      `
+      : `
+        <p>
+          <strong>Archivo adjunto:</strong>
+          No adjuntó archivo.
+        </p>
+      `;
+
+
+  return `
+    <div style="font-family:Arial,sans-serif;line-height:1.6;color:#222;">
+      <h2>Nuevo mensaje de STAY — I.N STYLE</h2>
+
+      <p>
+        <strong>Motivo:</strong>
+        ${category}
+      </p>
+
+      <p>
+        <strong>Nombre:</strong>
+        ${name}
+      </p>
+
+      <p>
+        <strong>Correo:</strong>
+        ${email}
+      </p>
+
+      <p>
+        <strong>Mensaje:</strong>
+      </p>
+
+      <div style="padding:15px;border:1px solid #ddd;border-radius:8px;">
+        ${description}
+      </div>
+
+      ${attachment}
+
+      <hr>
+
+      <p style="font-size:12px;color:#777;">
+        Este aviso fue generado automáticamente por I.N STYLE.
+      </p>
+    </div>
+  `;
+}
+
+
+// ========================================
+// TAMAÑO DE ARCHIVO
+// ========================================
+
+function formatFileSize(bytes) {
+
+  const size = Number(bytes || 0);
+
+  if (!size) {
+    return "0 B";
+  }
+
+  if (size < 1024) {
+    return `${size} B`;
+  }
+
+  if (size < 1024 * 1024) {
+    return `${(size / 1024).toFixed(1)} KB`;
+  }
+
+  return `${(size / (1024 * 1024)).toFixed(1)} MB`;
 }
 
 
@@ -535,13 +835,21 @@ function isValidEmail(email) {
 // GUARDAR ESTADO DEL SITIO
 // ========================================
 
-async function saveStateKey(db, key, value) {
+async function saveStateKey(
+  db,
+  key,
+  value
+) {
+
   const stateValue =
-    value === null || value === undefined
+    value === null ||
+    value === undefined
       ? null
       : String(value);
 
+
   if (stateValue === null) {
+
     await db
       .prepare(
         "DELETE FROM site_state WHERE state_key = ?"
@@ -551,6 +859,7 @@ async function saveStateKey(db, key, value) {
 
     return;
   }
+
 
   await db
     .prepare(`
@@ -580,9 +889,13 @@ async function saveStateKey(db, key, value) {
 // ========================================
 
 async function cleanupMessages(db) {
-  const cutoff = new Date(
-    Date.now() - 3 * 24 * 60 * 60 * 1000
-  ).toISOString();
+
+  const cutoff =
+    new Date(
+      Date.now() -
+      3 * 24 * 60 * 60 * 1000
+    ).toISOString();
+
 
   await db
     .prepare(
