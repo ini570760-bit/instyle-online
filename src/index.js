@@ -697,17 +697,20 @@ export default {
           });
 
 
-        } catch (error) {
+            } catch (error) {
 
-          return json(
-            {
-              message:
-                "No pudimos recibir el mensaje. Probá nuevamente."
-            },
-            500
-          );
-        }
-      }
+      console.error("ERROR /api/messages:", error);
+
+      return json(
+        {
+          message:
+            "ERROR REAL: " +
+            String(error?.message || error)
+        },
+        500
+      );
+    }
+    
 
 
       // =========================
