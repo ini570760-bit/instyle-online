@@ -3692,10 +3692,21 @@ footer p {
           </div>
 
           <div class="stay-field full">
-            <label for="stayImage">IMAGEN / DOCUMENTO (OPCIONAL)</label>
-            <input id="stayImage" name="adjunto" type="file" accept="image/*,.pdf,.doc,.docx,.txt">
-            <small>Podés adjuntar una imagen o documento. Límite total del envío: 8 MB.</small>
-          </div>
+  <label for="stayImage">IMÁGENES / DOCUMENTOS (OPCIONAL)</label>
+
+  <input
+    id="stayImage"
+    name="attachment"
+    type="file"
+    accept="image/*,.pdf,.doc,.docx,.txt"
+    multiple
+  >
+
+  <small>
+    Podés adjuntar varias imágenes o documentos.
+    El límite TOTAL de todos los archivos es de 8 MB por mensaje.
+  </small>
+</div>
         </div>
 
         <button type="submit" class="stay-submit">ENVIAR MENSAJE →</button>
