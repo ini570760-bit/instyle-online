@@ -2382,7 +2382,7 @@ footer p {
 
           <h3 id="homeBottegaTitle">BOTTEGA VENETA</h3>
 
-          <p>
+          <p id="homeBottegaText">
             Información sobre la relación de I.N con
             Bottega Veneta y sus apariciones vinculadas
             a la firma.
@@ -2410,7 +2410,7 @@ footer p {
 
           <h3 id="homeDamianiTitle">DAMIANI</h3>
 
-          <p>
+          <p id="homeDamianiText">
             Información sobre la relación de I.N con
             Damiani y sus apariciones vinculadas
             a la firma.
@@ -5972,7 +5972,11 @@ document.addEventListener('DOMContentLoaded',function(){
     const brand=(key,photoId,textId,linkId)=>{
       const p=byId(photoId);
       renderImage(p,home[key+'Image'],'','FOTO '+key.toUpperCase());
-      const t=byId(textId);if(t)t.textContent=home[key+'Text']||'';
+      const t=byId(textId);
+      if(t){
+        const value=String(home[key+'Text']||'').trim();
+        t.innerHTML=value?value.split(/\n\s*\n/).map(x=>'<p>'+escapeHtml(x).replace(/\n/g,'<br>')+'</p>').join(''):''; 
+      }
       const a=byId(linkId),url=safeHttp(home[key+'Url']);
       if(a){a.hidden=!url;a.href=url;}
     };
