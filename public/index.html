@@ -57,7 +57,7 @@ body.admin-mode #mivEmvCodeWrap { display:none !important; }
 </script>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
-<title>I.N STYLE</title>
+<title>FAN - I.N</title>
 <script id="instyle-cloud-sync-v21">
 (function(){
   const STATE_KEYS=[
@@ -2193,7 +2193,7 @@ footer p {
     id="homeButton"
     class="site-logo"
     aria-label="Ir al inicio">
-    I.N STYLE
+    FAN - I.N
   </button>
 
   <button
@@ -2217,7 +2217,7 @@ footer p {
     <input
       id="siteSearchInput"
       type="search"
-      placeholder="Buscar en I.N STYLE..."
+      placeholder="Buscar en FAN - I.N..."
       autocomplete="off">
 
     <button
@@ -2249,7 +2249,7 @@ footer p {
 
   <div class="menu-content">
 
-    <p class="menu-small">I.N STYLE</p>
+    <p class="menu-small">FAN - I.N</p>
 
     <a href="#" class="menu-link" data-page="home">
       INICIO
@@ -2468,13 +2468,13 @@ footer p {
 
     <div class="trace-intro">
 
-      <p class="label">I.N STYLE — TOOLS</p>
+      <p class="label" id="traceLabel">FAN - I.N — HERRAMIENTAS</p>
 
       <h1 id="traceTitle">INNIE'S<br>TRACE</h1>
 
       <p>
-        Herramientas creadas para seguir y analizar
-        diferentes aspectos relacionados con I.N.
+        <span id="traceIntroText">Herramientas creadas para seguir y analizar
+        diferentes aspectos relacionados con I.N.</span>
       </p>
 
     </div>
@@ -3656,7 +3656,7 @@ footer p {
 <main id="contact" class="page">
   <section class="contact-page">
     <div class="contact-card">
-      <p class="label">I.N STYLE · STAY</p>
+      <p class="label">FAN - I.N · STAY</p>
       <h1 id="contactTitle">DEJÁ TU MENSAJE</h1>
       <p id="contactText">¿Tenés una sugerencia, reclamo, queja, consulta o querés reportar contenido malicioso relacionado con I.N? Elegí el motivo y contanos qué pasó.</p>
 
@@ -3821,7 +3821,7 @@ footer p {
 ===================================================== -->
 
 <footer id="siteFooter" class="site-signature">
-  <p id="siteSignatureMain" class="site-signature-main">Hecho por I.N Argentina para fans.</p>
+  <p id="siteSignatureMain" class="site-signature-main">Hecho por I.N Argentina para Fans</p>
   <p id="siteSignatureCollaborators" class="site-signature-collaborators" hidden></p>
 </footer>
 
@@ -5594,7 +5594,7 @@ body:not(.admin-mode) .promotion-editor {
   document.querySelectorAll('[data-voting-tab]').forEach(function(tab){tab.addEventListener('click',function(){const target=tab.dataset.votingTab;document.querySelectorAll('[data-voting-tab]').forEach(function(t){const active=t.dataset.votingTab===target;t.classList.toggle('active',active);t.setAttribute('aria-selected',active?'true':'false')});document.querySelectorAll('[data-voting-panel]').forEach(function(panel){const active=panel.dataset.votingPanel===target;panel.classList.toggle('active',active);panel.hidden=!active});});});
   function renderPublic(){const now=new Date();const active=votings.filter(v=>v.status==='active'&&(!v.end||new Date(v.end+'T23:59:59')>=now)).sort(sortActive);const finished=votings.filter(v=>v.status==='finished'||(v.end&&new Date(v.end+'T23:59:59')<now)).sort(sortFinished);$('activeVotingCount').textContent=active.length;$('finishedVotingCount').textContent=finished.length;$('activeVotingList').innerHTML=active.length?active.map(card).join(''):'<p class="voting-empty">SIN VOTACIONES ACTIVAS</p>';$('finishedVotingList').innerHTML=finished.length?finished.map(card).join(''):'<p class="voting-empty">Todavía no hay votaciones finalizadas.</p>';document.querySelectorAll('[data-open-tutorial]').forEach(b=>b.addEventListener('click',()=>{openTutorialPublic(b.dataset.openTutorial)}));}
   function openTutorialPublic(id){showPage('tutoriales');setTimeout(()=>{const el=document.querySelector('[data-tutorial-id="'+CSS.escape(id)+'"]');if(el){el.scrollIntoView({behavior:'smooth',block:'center'});el.classList.add('tutorial-highlight');setTimeout(()=>el.classList.remove('tutorial-highlight'),1600)}},80)}
-  function renderAdmin(){const list=$('votingAdminList');if(!votings.length){list.innerHTML='<p class="voting-help">Todavía no hay votaciones cargadas.</p>';return}list.innerHTML=votings.map(v=>'<div class="voting-admin-row" data-id="'+esc(v.id)+'"><span class="voting-admin-name">'+esc(v.title)+'<small>'+(v.type==='instyle'?'I.N STYLE':'FICHA · '+esc(v.app))+' · '+(v.status==='active'?'EN CURSO':'FINALIZADA')+(v.priority&&v.priority!=='none'?' · '+esc(v.priority.toUpperCase()):'')+'</small></span><button data-act="up">↑</button><button data-act="down">↓</button><button data-act="edit">EDITAR</button><button class="delete" data-act="delete">BORRAR</button></div>').join('');list.querySelectorAll('button').forEach(b=>b.addEventListener('click',()=>adminAction(b.closest('.voting-admin-row').dataset.id,b.dataset.act)));}
+  function renderAdmin(){const list=$('votingAdminList');if(!votings.length){list.innerHTML='<p class="voting-help">Todavía no hay votaciones cargadas.</p>';return}list.innerHTML=votings.map(v=>'<div class="voting-admin-row" data-id="'+esc(v.id)+'"><span class="voting-admin-name">'+esc(v.title)+'<small>'+(v.type==='instyle'?'FAN - I.N':'FICHA · '+esc(v.app))+' · '+(v.status==='active'?'EN CURSO':'FINALIZADA')+(v.priority&&v.priority!=='none'?' · '+esc(v.priority.toUpperCase()):'')+'</small></span><button data-act="up">↑</button><button data-act="down">↓</button><button data-act="edit">EDITAR</button><button class="delete" data-act="delete">BORRAR</button></div>').join('');list.querySelectorAll('button').forEach(b=>b.addEventListener('click',()=>adminAction(b.closest('.voting-admin-row').dataset.id,b.dataset.act)));}
   function resetVoting(){editingVotingId=null;$('votingEditor').hidden=true;$('votingTitle').value='';$('votingApp').value='';$('votingCategory').value='';$('votingGoal').value='';$('votingLink').value='';$('votingQuestion').value='';$('votingDescription').value='';$('votingStart').value='';$('votingEnd').value='';$('votingPriority').value='none';$('votingImportant').checked=false;$('votingStatus').value='active';$('votingResult').value='pending';$('votingOptionsWrap').innerHTML='';$('votingEditType').value='external';$('externalFields').hidden=false;$('instyleFields').hidden=true;$('votingMessage').textContent='';}
   function addOption(value=''){const row=document.createElement('div');row.className='voting-option-row';row.innerHTML='<input class="voting-option-input" type="text" placeholder="Opción" value="'+esc(value)+'"><button type="button" class="voting-small-action remove-option">×</button>';row.querySelector('.remove-option').addEventListener('click',()=>row.remove());$('votingOptionsWrap').appendChild(row);}
   function openVotingEditor(type,item){resetVoting();editingVotingId=item?item.id:null;$('votingEditType').value=type;$('votingEditorTitle').textContent=item?'EDITAR '+(type==='instyle'?'VOTACIÓN':'FICHA'):'NUEVA '+(type==='instyle'?'VOTACIÓN':'FICHA');$('votingEditor').hidden=false;$('externalFields').hidden=type==='instyle';$('instyleFields').hidden=type!=='instyle';if(item){$('votingTitle').value=item.title||'';$('votingApp').value=item.app||'';$('votingCategory').value=item.category||'';$('votingGoal').value=item.goal||'';$('votingLink').value=item.link||'';$('votingQuestion').value=item.question||'';$('votingDescription').value=item.description||'';$('votingStart').value=item.start||'';$('votingEnd').value=item.end||'';$('votingPriority').value=item.priority||'none';$('votingImportant').checked=!!item.important;$('votingStatus').value=item.status||'active';$('votingResult').value=item.result||'pending';(item.options||[]).forEach(addOption);}else if(type==='instyle'){addOption();addOption();} $('votingEditor').scrollIntoView({behavior:'smooth',block:'center'});}
@@ -5935,7 +5935,7 @@ document.addEventListener('DOMContentLoaded',function(){
     const brand=(key,photoId,textId,linkId)=>{const p=byId(photoId);if(p)p.innerHTML=home[key+'Image']?'<img src="'+escapeHtml(home[key+'Image'])+'" alt="">':'FOTO '+key.toUpperCase();const t=byId(textId);if(t)t.textContent=home[key+'Text']||'';const a=byId(linkId),url=safeHttp(home[key+'Url']);if(a){a.hidden=!url;a.href=url;}};
     brand('bottega','homeBottegaPhoto','homeBottegaText','homeBottegaLink');brand('damiani','homeDamianiPhoto','homeDamianiText','homeDamianiLink');
     SOCIALS.forEach(k=>{const a=document.querySelector('[data-social="'+k+'"]');if(!a)return;const u=safeHttp(home.socials[k]);a.hidden=!u;a.href=u;});
-    const sig=byId('siteSignatureMain');if(sig)sig.textContent='Hecho por '+(home.signature||'I.N Argentina')+' para fans.';
+    const sig=byId('siteSignatureMain');if(sig)sig.textContent='Hecho por '+(home.signature||'I.N Argentina')+' para Fans';
     const col=byId('siteSignatureCollaborators');if(col){const text=String(home.collaborators||'').trim();col.hidden=!text;col.textContent=text;}
   }
   function loadHomeForm(){
@@ -5952,8 +5952,23 @@ document.addEventListener('DOMContentLoaded',function(){
   const SITE_TEXT_IDS=['textHomeHeroQuote','textHomeAboutTitle','textHomeAboutLabel','textHomeLuxuryLabel','textHomeLuxuryTitle','textHomeLuxuryIntro','textHomeFollowLabel','textHomeFollowTitle','textTraceLabel','textTraceTitle','textTraceInstagram','textTracePromotion','textTraceGenerator','textTraceImpact','textInstagramIntro','textPromotionIntro','textGeneratorIntro','textMivIntro','textVotingIntro','textStreamingIntro','textTutorialIntro','textFangroupsIntro'];
   function getSiteTexts(){try{const x=JSON.parse(localStorage.getItem(SITE_TEXTS_KEY)||'{}');return x&&typeof x==='object'?x:{};}catch(e){return {};}}
   function loadSiteTextsForm(){const data=getSiteTexts();SITE_TEXT_IDS.forEach(id=>{const el=byId(id);if(el)el.value=data[id]||'';});}
-  function saveSiteTexts(){const data=getSiteTexts();SITE_TEXT_IDS.forEach(id=>{const el=byId(id);if(el)data[id]=el.value;});localStorage.setItem(SITE_TEXTS_KEY,JSON.stringify(data));const m=byId('siteTextsMessage');if(m){m.style.color='#315d39';m.textContent='✓ Textos guardados. Los aplicaremos al contenido público en la siguiente etapa del editor.';}}
-  function applySiteTexts(){loadSiteTextsForm();}
+  function setText(id,value){const el=byId(id);if(!el)return;const v=String(value??'');if(el.tagName==='INPUT'||el.tagName==='TEXTAREA')el.value=v;else el.textContent=v;}
+  function applySiteTexts(){
+    const d=getSiteTexts();
+    // Cargar el editor y, al mismo tiempo, aplicar los cambios al sitio público.
+    loadSiteTextsForm();
+    const map={
+      textHomeHeroQuote:'homeHeroQuote', textHomeAboutTitle:'homeAboutTitle', textHomeAboutLabel:'homeAboutLabel',
+      textHomeLuxuryLabel:'homeLuxuryLabel', textHomeLuxuryTitle:'homeLuxuryTitle', textHomeLuxuryIntro:'homeLuxuryIntro',
+      textHomeFollowLabel:'homeFollowLabel', textHomeFollowTitle:'homeFollowTitle', textTraceLabel:'traceLabel',
+      textTraceTitle:'traceTitle', textTraceInstagram:'traceInstagramCardText', textTracePromotion:'tracePromotionCardText',
+      textTraceGenerator:'traceGeneratorCardText', textTraceImpact:'traceImpactCardText', textInstagramIntro:'instagramIntro',
+      textPromotionIntro:'promotionIntro', textGeneratorIntro:'generatorIntro', textMivIntro:'mivIntro', textVotingIntro:'votingIntro',
+      textStreamingIntro:'streamingIntro', textTutorialIntro:'tutorialIntro', textFangroupsIntro:'fangroupsIntro'
+    };
+    Object.keys(map).forEach(k=>{if(Object.prototype.hasOwnProperty.call(d,k))setText(map[k],d[k]);});
+  }
+  function saveSiteTexts(){const data=getSiteTexts();SITE_TEXT_IDS.forEach(id=>{const el=byId(id);if(el)data[id]=el.value;});localStorage.setItem(SITE_TEXTS_KEY,JSON.stringify(data));applySiteTexts();const m=byId('siteTextsMessage');if(m){m.style.color='#315d39';m.textContent='✓ Textos guardados y aplicados al sitio.';}}
   // =====================================================
   // ARCHIVOS DEL SITIO — almacenamiento en KV, no Base64
   // =====================================================
@@ -5972,7 +5987,8 @@ document.addEventListener('DOMContentLoaded',function(){
     });
     const result = await response.json().catch(()=>({}));
     if(!response.ok) throw new Error(result.message || 'No se pudo subir el archivo.');
-    const url = result.url || result.fileUrl || result.path;
+    const rawUrl = result.url || result.fileUrl || result.path;
+    const url = rawUrl ? new URL(rawUrl, window.location.origin).href : '';
     if(!url) throw new Error('El servidor guardó el archivo pero no devolvió su enlace.');
     return url;
   };
@@ -6033,6 +6049,7 @@ document.addEventListener('DOMContentLoaded',function(){
     // al navegar entre las secciones.
     keepAdminUI();
     applyHome();applySiteTexts();renderContact();
+    window.addEventListener('instyle:cloud-updated',function(){applyHome();applySiteTexts();renderContact();});
     const login=byId('adminLogin'),panel=byId('adminPanel'),code=byId('centralAdminCode'),unlockButton=byId('centralAdminUnlock'),msg=byId('centralAdminMessage');
     function unlock(){
       if(!code||!login||!panel)return;
@@ -6082,7 +6099,7 @@ document.addEventListener('DOMContentLoaded',function(){
         const r=await fetch('/api/messages',{method:'POST',body:data});
         const result=await r.json().catch(()=>({}));
         if(!r.ok)throw new Error(result.message||'No se pudo enviar');
-        msg.textContent=result.emailSent?'✓ Mensaje enviado. Gracias por comunicarte con I.N STYLE.':'✓ Mensaje recibido. El equipo de I.N STYLE lo verá pronto.';
+        msg.textContent=result.emailSent?'✓ Mensaje enviado. Gracias por comunicarte con FAN - I.N.':'✓ Mensaje recibido. El equipo de FAN - I.N lo verá pronto.';
         msg.style.color='#315d39';stayForm.reset();
       }catch(err){msg.textContent=err.message||'No pudimos enviar el mensaje. Probá nuevamente en unos segundos.';msg.style.color='#8a2929';}
       finally{if(button){button.disabled=false;button.textContent='ENVIAR MENSAJE →';}}
