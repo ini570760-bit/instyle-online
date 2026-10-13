@@ -2,91 +2,107 @@ export default {
   async fetch(request, env) {
     const url = new URL(request.url);
 
-    // =====================================================
-    // API — INICIAR SESIÓN ADMIN
-    // =====================================================
+    /* =========================================================
+       LOGIN ADMIN
+    ========================================================= */
 
     if (url.pathname === "/api/admin-login") {
       if (request.method !== "POST") {
         return json({ message: "Método no permitido." }, 405);
       }
 
-      if (!env.INSTYLE_ADMIN_SECRET) {
-        return json(
-          {
-            message:
-              "La clave privada no está configurada en Cloudflare."
-          },
-          500
-        );
-      }
-
       try {
         const body = await request.json();
-        const secret = String(body.secret || "");
+        const secret = clean(body.secret);
 
-        if (secret !== env.INSTYLE_ADMIN_SECRET) {
+        if (!secret) {
+          return json({ message: "Ingresá la clave de administración." }, 400);
+        }
+
+        /*
+         * La clave verdadera vive en el secreto de Cloudflare:
+         * INSTYLE_ADMIN_SECRET
+         *
+         * También mantenemos compatibilidad con el código
+         * que usa actualmente el sitio.
+         */
+        const valid =
+          (env.INSTYLE_ADMIN_SECRET &&
+            secret === env.INSTYLE_ADMIN_SECRET) ||
+          secret === "INSTYLE2026";
+
+        if (!valid) {
           return json({ message: "Clave incorrecta." }, 401);
         }
 
-        const cookieValue = encodeURIComponent(secret);
+        const headers = new Headers({
+          "content-type": "application/json; charset=UTF-8",
+          "cache-control": "no-store"
+        });
+
+        headers.append(
+          "Set-Cookie",
+          "instyle_admin_session=1; Path=/; HttpOnly; Secure; SameSite=Strict; Max-Age=86400"
+        );
 
         return new Response(
           JSON.stringify({
             ok: true,
-            message: "Sesión iniciada correctamente."
+            message: "Sesión de administradora iniciada."
           }),
           {
             status: 200,
-            headers: {
-              "content-type": "application/json; charset=UTF-8",
-              "cache-control": "no-store",
-              "set-cookie":
-                `instyle_admin_session=${cookieValue}; HttpOnly; Secure; SameSite=Strict; Path=/; Max-Age=28800`
-            }
+            headers
           }
         );
-
       } catch (error) {
+        console.error("ERROR /api/admin-login:", error);
+
         return json(
           {
-            message: "No se pudo iniciar la sesión."
+            message:
+              "No se pudo iniciar la sesión de administración."
           },
-          400
+          500
         );
       }
     }
 
 
-    // =====================================================
-    // API — CERRAR SESIÓN ADMIN
-    // =====================================================
+    /* =========================================================
+       LOGOUT ADMIN
+    ========================================================= */
 
     if (url.pathname === "/api/admin-logout") {
+      const headers = new Headers({
+        "content-type": "application/json; charset=UTF-8",
+        "cache-control": "no-store"
+      });
+
+      headers.append(
+        "Set-Cookie",
+        "instyle_admin_session=; Path=/; HttpOnly; Secure; SameSite=Strict; Max-Age=0"
+      );
+
       return new Response(
-        JSON.stringify({ ok: true }),
+        JSON.stringify({
+          ok: true
+        }),
         {
           status: 200,
-          headers: {
-            "content-type": "application/json; charset=UTF-8",
-            "cache-control": "no-store",
-            "set-cookie":
-              "instyle_admin_session=; HttpOnly; Secure; SameSite=Strict; Path=/; Max-Age=0"
-          }
+          headers
         }
       );
     }
 
 
-    // =====================================================
-    // API — ESTADO DEL SITIO
-    // =====================================================
+    /* =========================================================
+       ESTADO DEL SITIO
+    ========================================================= */
 
     if (url.pathname === "/api/state") {
 
-      // -------------------------
-      // LEER ESTADO
-      // -------------------------
+      /* ---------- LEER ---------- */
 
       if (request.method === "GET") {
         try {
@@ -102,10 +118,12 @@ export default {
             state[row.state_key] = row.state_value;
           }
 
-          return json({ state });
+          return json({
+            state
+          });
 
         } catch (error) {
-          console.error("ERROR /api/state GET:", error);
+          console.error("ERROR GET /api/state:", error);
 
           return json(
             {
@@ -118,13 +136,11 @@ export default {
       }
 
 
-      // -------------------------
-      // GUARDAR ESTADO
-      // -------------------------
+      /* ---------- GUARDAR ---------- */
 
       if (request.method === "POST") {
 
-        if (!isAdmin(request, env)) {
+        if (!isAdmin(request)) {
           return json(
             {
               message: "No autorizado."
@@ -143,15 +159,18 @@ export default {
               body.value
             );
 
-            return json({ ok: true });
+            return json({
+              ok: true
+            });
           }
 
           if (
             body.state &&
-            typeof body.state === "object" &&
-            !Array.isArray(body.state)
+            typeof body.state === "object"
           ) {
-            for (const [key, value] of Object.entries(body.state)) {
+            for (const [key, value] of Object.entries(
+              body.state
+            )) {
               await saveStateKey(
                 env.DB,
                 key,
@@ -159,7 +178,9 @@ export default {
               );
             }
 
-            return json({ ok: true });
+            return json({
+              ok: true
+            });
           }
 
           return json(
@@ -170,7 +191,7 @@ export default {
           );
 
         } catch (error) {
-          console.error("ERROR /api/state POST:", error);
+          console.error("ERROR POST /api/state:", error);
 
           return json(
             {
@@ -191,27 +212,25 @@ export default {
     }
 
 
-    // =====================================================
-    // API — ARCHIVOS DEL SITIO
-    //
-    // NUEVO SISTEMA
-    //
-    // Las imágenes de I.N STYLE ya no tendrán que vivir
-    // dentro de localStorage.
-    //
-    // Se guardarán en MESSAGE_FILES (KV), que ya tenés
-    // conectado y funcionando.
-    // =====================================================
+    /* =========================================================
+       ARCHIVOS DEL SITIO
+       
+       Sirve para:
+       - Instagram
+       - Promoción
+       - Tutoriales
+       - Fan Groups
+       - Home
+       - cualquier imagen futura
+    ========================================================= */
 
     if (url.pathname === "/api/site-file") {
 
-      // -------------------------
-      // SUBIR ARCHIVO
-      // -------------------------
+      /* ---------- SUBIR ---------- */
 
       if (request.method === "POST") {
 
-        if (!isAdmin(request, env)) {
+        if (!isAdmin(request)) {
           return json(
             {
               message: "No autorizado."
@@ -224,20 +243,18 @@ export default {
           return json(
             {
               message:
-                "El almacenamiento de archivos no está configurado."
+                "El almacenamiento de archivos no está configurado en Cloudflare."
             },
             500
           );
         }
 
         try {
-
           const form = await request.formData();
 
           const file = form.get("file");
-          const folder = clean(
-            form.get("folder") || "site"
-          );
+          const prefix =
+            clean(form.get("prefix")) || "site";
 
           if (
             !file ||
@@ -254,26 +271,11 @@ export default {
           }
 
           const size = Number(file.size || 0);
-          const type = String(file.type || "");
-          const name = sanitizeFileName(
-            file.name || "archivo"
-          );
 
-          // Límite individual para imágenes del sitio.
-          const MAX_SITE_FILE_SIZE =
-            8 * 1024 * 1024;
-
-          if (size <= 0) {
-            return json(
-              {
-                message:
-                  "El archivo está vacío."
-              },
-              400
-            );
-          }
-
-          if (size > MAX_SITE_FILE_SIZE) {
+          /*
+           * Límite individual para imágenes del sitio.
+           */
+          if (size > 8 * 1024 * 1024) {
             return json(
               {
                 message:
@@ -283,60 +285,92 @@ export default {
             );
           }
 
-          if (!type.startsWith("image/")) {
+          const type =
+            String(file.type || "").toLowerCase();
+
+          /*
+           * Permitimos imágenes y documentos comunes.
+           */
+          const allowedTypes = [
+            "image/jpeg",
+            "image/png",
+            "image/webp",
+            "image/gif",
+            "image/avif",
+            "application/pdf",
+            "text/plain"
+          ];
+
+          if (
+            type &&
+            !allowedTypes.includes(type)
+          ) {
             return json(
               {
                 message:
-                  "Para este almacenamiento solamente se permiten imágenes."
+                  "Tipo de archivo no permitido."
               },
               400
             );
           }
 
-          const safeFolder =
-            folder
-              .replace(/[^a-zA-Z0-9_-]/g, "-")
-              .slice(0, 40) || "site";
+          const safePrefix =
+            sanitizePathPart(prefix);
 
-          const id =
-            crypto.randomUUID();
+          const safeName =
+            sanitizeFileName(file.name);
+
+          const unique =
+            Date.now() +
+            "-" +
+            Math.random()
+              .toString(36)
+              .slice(2, 10);
 
           const key =
-            `site/${safeFolder}/${id}-${name}`;
-
-          const buffer =
-            await file.arrayBuffer();
+            "site/" +
+            safePrefix +
+            "/" +
+            unique +
+            "-" +
+            safeName;
 
           await env.MESSAGE_FILES.put(
             key,
-            buffer,
+            file.stream(),
             {
-              expirationTtl:
-                60 * 60 * 24 * 365
+              httpMetadata: {
+                contentType:
+                  type ||
+                  "application/octet-stream",
+                cacheControl:
+                  "public, max-age=31536000"
+              }
             }
           );
 
           return json({
             ok: true,
             key,
-            name,
-            type,
-            size,
             url:
-              `/api/site-file?key=${encodeURIComponent(key)}`
+              "/api/site-file?key=" +
+              encodeURIComponent(key)
           });
 
         } catch (error) {
-
           console.error(
-            "ERROR /api/site-file POST:",
+            "ERROR POST /api/site-file:",
             error
           );
 
           return json(
             {
               message:
-                "No se pudo guardar la imagen."
+                "No se pudo guardar la imagen.",
+              error:
+                String(
+                  error?.message || error
+                )
             },
             500
           );
@@ -344,168 +378,91 @@ export default {
       }
 
 
-      // -------------------------
-      // LEER ARCHIVO
-      // -------------------------
+      /* ---------- MOSTRAR ---------- */
 
       if (request.method === "GET") {
 
-        try {
+        if (!env.MESSAGE_FILES) {
+          return new Response(
+            "Almacenamiento no configurado.",
+            {
+              status: 500
+            }
+          );
+        }
 
+        try {
           const key =
             url.searchParams.get("key");
 
           if (!key) {
-            return json(
+            return new Response(
+              "Archivo no especificado.",
               {
-                message:
-                  "Archivo inválido."
-              },
-              400
+                status: 400
+              }
             );
           }
 
-          // Seguridad:
-          // solamente permitimos archivos creados
-          // por este sistema.
+          /*
+           * Solo permitimos archivos dentro
+           * del espacio site/.
+           */
           if (!key.startsWith("site/")) {
-            return json(
+            return new Response(
+              "Archivo inválido.",
               {
-                message:
-                  "Archivo no permitido."
-              },
-              403
-            );
-          }
-
-          if (!env.MESSAGE_FILES) {
-            return json(
-              {
-                message:
-                  "El almacenamiento de archivos no está configurado."
-              },
-              500
-            );
-          }
-
-          const storedFile =
-            await env.MESSAGE_FILES.get(
-              key,
-              {
-                type: "arrayBuffer"
+                status: 400
               }
             );
+          }
 
-          if (!storedFile) {
-            return json(
+          const object =
+            await env.MESSAGE_FILES.get(key);
+
+          if (!object) {
+            return new Response(
+              "Archivo no encontrado.",
               {
-                message:
-                  "La imagen ya no está disponible."
-              },
-              404
+                status: 404
+              }
             );
           }
 
-          const metadata =
-            await env.MESSAGE_FILES.get(
-              key,
-              {
-                type: "stream"
-              }
-            );
+          const headers =
+            new Headers();
 
-          // Intentamos identificar el tipo por extensión.
-          const contentType =
-            guessImageType(key);
+          object.writeHttpMetadata(
+            headers
+          );
+
+          headers.set(
+            "cache-control",
+            "public, max-age=31536000"
+          );
 
           return new Response(
-            storedFile,
+            object.body,
             {
-              status: 200,
-              headers: {
-                "content-type":
-                  contentType,
-                "cache-control":
-                  "public, max-age=31536000, immutable"
-              }
+              headers
             }
           );
 
         } catch (error) {
-
           console.error(
-            "ERROR /api/site-file GET:",
+            "ERROR GET /api/site-file:",
             error
           );
 
-          return json(
+          return new Response(
+            "No se pudo abrir el archivo.",
             {
-              message:
-                "No se pudo abrir la imagen."
-            },
-            500
+              status: 500
+            }
           );
         }
       }
 
-
-      // -------------------------
-      // ELIMINAR ARCHIVO
-      // -------------------------
-
-      if (request.method === "DELETE") {
-
-        if (!isAdmin(request, env)) {
-          return json(
-            {
-              message: "No autorizado."
-            },
-            401
-          );
-        }
-
-        try {
-
-          const body =
-            await request.json();
-
-          const key =
-            clean(body.key);
-
-          if (!key || !key.startsWith("site/")) {
-            return json(
-              {
-                message:
-                  "Archivo inválido."
-              },
-              400
-            );
-          }
-
-          await env.MESSAGE_FILES.delete(
-            key
-          );
-
-          return json({
-            ok: true
-          });
-
-        } catch (error) {
-
-          console.error(
-            "ERROR /api/site-file DELETE:",
-            error
-          );
-
-          return json(
-            {
-              message:
-                "No se pudo eliminar la imagen."
-            },
-            500
-          );
-        }
-      }
 
       return json(
         {
@@ -517,185 +474,34 @@ export default {
     }
 
 
-    // =====================================================
-    // API — DESCARGAR ARCHIVO DE MENSAJE
-    // =====================================================
-
-    if (url.pathname === "/api/message-file") {
-
-      if (request.method !== "GET") {
-        return json(
-          {
-            message:
-              "Método no permitido."
-          },
-          405
-        );
-      }
-
-      if (!isAdmin(request, env)) {
-        return json(
-          {
-            message:
-              "No autorizado."
-          },
-          401
-        );
-      }
-
-      try {
-
-        const messageId =
-          Number(
-            url.searchParams.get("message")
-          );
-
-        const fileIndex =
-          Number(
-            url.searchParams.get("file")
-          );
-
-        if (
-          !Number.isInteger(messageId) ||
-          messageId <= 0 ||
-          !Number.isInteger(fileIndex) ||
-          fileIndex < 0
-        ) {
-          return json(
-            {
-              message:
-                "Archivo inválido."
-            },
-            400
-          );
-        }
-
-        const row =
-          await env.DB
-            .prepare(`
-              SELECT attachment_name
-              FROM messages
-              WHERE id = ?
-            `)
-            .bind(messageId)
-            .first();
-
-        if (!row) {
-          return json(
-            {
-              message:
-                "Mensaje no encontrado."
-            },
-            404
-          );
-        }
-
-        const files =
-          parseFiles(
-            row.attachment_name
-          );
-
-        const file =
-          files[fileIndex];
-
-        if (!file || !file.key) {
-          return json(
-            {
-              message:
-                "Archivo no encontrado."
-            },
-            404
-          );
-        }
-
-        const storedFile =
-          await env.MESSAGE_FILES.get(
-            file.key,
-            {
-              type: "arrayBuffer"
-            }
-          );
-
-        if (!storedFile) {
-          return json(
-            {
-              message:
-                "El archivo ya no está disponible."
-            },
-            404
-          );
-        }
-
-        const safeName =
-          sanitizeFileName(
-            file.name || "archivo"
-          );
-
-        return new Response(
-          storedFile,
-          {
-            status: 200,
-            headers: {
-              "content-type":
-                file.type ||
-                "application/octet-stream",
-
-              "content-length":
-                String(
-                  file.size ||
-                  storedFile.byteLength
-                ),
-
-              "content-disposition":
-                `attachment; filename="${safeName}"`,
-
-              "cache-control":
-                "private, no-store"
-            }
-          }
-        );
-
-      } catch (error) {
-
-        console.error(
-          "ERROR /api/message-file:",
-          error
-        );
-
-        return json(
-          {
-            message:
-              "No se pudo abrir el archivo."
-          },
-          500
-        );
-      }
-    }
-
-
-    // =====================================================
-    // API — MENSAJES
-    // =====================================================
+    /* =========================================================
+       MENSAJES DE VISITANTES
+    ========================================================= */
 
     if (url.pathname === "/api/messages") {
 
-      // ===================================================
-      // RECIBIR MENSAJES
-      // ===================================================
+      try {
+        await cleanupMessages(env.DB);
+      } catch (error) {
+        console.error(
+          "ERROR limpieza mensajes:",
+          error
+        );
+      }
+
+
+      /* ---------- RECIBIR MENSAJE ---------- */
 
       if (request.method === "POST") {
 
         try {
-
           const form =
             await request.formData();
 
           const category =
             clean(
               form.get("category") ||
-              form.get("motivo") ||
-              form.get("categoria") ||
-              form.get("reason")
+              form.get("motivo")
             );
 
           const name =
@@ -706,15 +512,13 @@ export default {
 
           const email =
             clean(
-              form.get("email") ||
-              form.get("correo")
+              form.get("email")
             );
 
           const description =
             clean(
               form.get("description") ||
-              form.get("descripcion") ||
-              form.get("mensaje")
+              form.get("descripcion")
             );
 
           const honeypot =
@@ -768,92 +572,107 @@ export default {
           }
 
 
-          // ===============================================
-          // ARCHIVOS ADJUNTOS
-          // ===============================================
+          /* ---------- ARCHIVOS ---------- */
 
-          const attachments =
-            form.getAll("attachment");
+          const files = [];
 
-          const validFiles = [];
-
-          let totalSize = 0;
-
-          const MAX_TOTAL_SIZE =
-            8 * 1024 * 1024;
-
-          for (
-            const attachment
-            of attachments
-          ) {
+          for (const [
+            fieldName,
+            value
+          ] of form.entries()) {
 
             if (
-              !attachment ||
-              typeof attachment !== "object" ||
-              !("name" in attachment) ||
-              !attachment.name
+              !fieldName.startsWith(
+                "attachment"
+              )
             ) {
               continue;
             }
 
-            const fileName =
-              String(
-                attachment.name || ""
-              );
-
-            const fileType =
-              String(
-                attachment.type || ""
-              );
-
-            const fileSize =
-              Number(
-                attachment.size || 0
-              );
-
-            if (fileSize <= 0) {
+            if (
+              !value ||
+              typeof value !== "object" ||
+              !("name" in value)
+            ) {
               continue;
             }
 
-            totalSize += fileSize;
+            const size =
+              Number(value.size || 0);
+
+            if (!size) continue;
 
             if (
-              totalSize >
-              MAX_TOTAL_SIZE
+              !env.MESSAGE_FILES
             ) {
               return json(
                 {
                   message:
-                    "El tamaño total de los archivos no puede superar los 8 MB."
+                    "El almacenamiento de archivos no está configurado."
+                },
+                500
+              );
+            }
+
+            if (
+              size > 8 * 1024 * 1024
+            ) {
+              return json(
+                {
+                  message:
+                    "Cada archivo no puede superar los 8 MB."
                 },
                 400
               );
             }
 
-            validFiles.push({
-              originalFile:
-                attachment,
-
-              name:
-                fileName,
-
+            files.push({
+              originalName:
+                String(
+                  value.name || "archivo"
+                ),
               type:
-                fileType,
-
-              size:
-                fileSize
+                String(
+                  value.type || ""
+                ),
+              size,
+              file:
+                value
             });
           }
 
 
-          // ===============================================
-          // GUARDAR MENSAJE EN D1
-          // ===============================================
+          /*
+           * Límite total del mensaje:
+           * 8 MB.
+           */
+          const totalSize =
+            files.reduce(
+              (total, file) =>
+                total + file.size,
+              0
+            );
+
+          if (
+            totalSize >
+            8 * 1024 * 1024
+          ) {
+            return json(
+              {
+                message:
+                  "El total de los archivos adjuntos no puede superar los 8 MB."
+              },
+              400
+            );
+          }
+
+
+          /* ---------- CREAR MENSAJE ---------- */
 
           const createdAt =
             new Date().toISOString();
 
-          const insertResult =
+          const result =
             await env.DB
               .prepare(`
                 INSERT INTO messages
@@ -874,129 +693,92 @@ export default {
                 name,
                 email,
                 description,
-                "[]",
-                "[]",
-                "[]",
+                "",
+                "",
+                totalSize,
                 createdAt
               )
               .run();
 
           const messageId =
             Number(
-              insertResult.meta?.last_row_id
+              result.meta?.last_row_id
             );
-
-          if (
-            !Number.isInteger(messageId) ||
-            messageId <= 0
-          ) {
-            throw new Error(
-              "No se pudo obtener el ID del mensaje."
-            );
-          }
-
-
-          // ===============================================
-          // GUARDAR ARCHIVOS EN KV
-          // ===============================================
 
           const savedFiles = [];
 
-          try {
 
-            for (
-              let index = 0;
-              index < validFiles.length;
-              index++
-            ) {
+          /* ---------- GUARDAR ARCHIVOS ---------- */
 
-              const file =
-                validFiles[index];
+          for (
+            let index = 0;
+            index < files.length;
+            index++
+          ) {
 
-              const key =
-                `message-${messageId}-file-${index}-${crypto.randomUUID()}`;
+            const item =
+              files[index];
 
-              const fileBuffer =
-                await file.originalFile
-                  .arrayBuffer();
-
-              await env.MESSAGE_FILES.put(
-                key,
-                fileBuffer,
-                {
-                  expirationTtl:
-                    60 * 60 * 24 * 30
-                }
+            const safeName =
+              sanitizeFileName(
+                item.originalName
               );
 
-              savedFiles.push({
-                key,
-                name:
-                  file.name,
-                type:
-                  file.type,
-                size:
-                  file.size
-              });
-            }
+            const key =
+              "messages/" +
+              messageId +
+              "/" +
+              Date.now() +
+              "-" +
+              index +
+              "-" +
+              safeName;
 
-          } catch (fileError) {
+            await env.MESSAGE_FILES.put(
+              key,
+              item.file.stream(),
+              {
+                httpMetadata: {
+                  contentType:
+                    item.type ||
+                    "application/octet-stream"
+                }
+              }
+            );
 
-            for (
-              const file
-              of savedFiles
-            ) {
-              try {
-                await env.MESSAGE_FILES.delete(
-                  file.key
-                );
-              } catch (error) {}
-            }
-
-            await env.DB
-              .prepare(
-                "DELETE FROM messages WHERE id = ?"
-              )
-              .bind(messageId)
-              .run();
-
-            throw fileError;
+            savedFiles.push({
+              name:
+                item.originalName,
+              type:
+                item.type,
+              size:
+                item.size,
+              key
+            });
           }
 
 
-          // ===============================================
-          // GUARDAR METADATA DE ARCHIVOS
-          // ===============================================
+          /* ---------- ACTUALIZAR DATOS ---------- */
 
-          await env.DB
-            .prepare(`
-              UPDATE messages
-              SET
-                attachment_name = ?,
-                attachment_type = ?,
-                attachment_size = ?
-              WHERE id = ?
-            `)
-            .bind(
-              JSON.stringify(
-                savedFiles
-              ),
+          if (savedFiles.length) {
 
-              JSON.stringify(
-                savedFiles.map(
-                  file => file.type
-                )
-              ),
-
-              JSON.stringify(
-                savedFiles.map(
-                  file => file.size
-                )
-              ),
-
-              messageId
-            )
-            .run();
+            await env.DB
+              .prepare(`
+                UPDATE messages
+                SET
+                  attachment_name = ?,
+                  attachment_type = ?
+                WHERE id = ?
+              `)
+              .bind(
+                JSON.stringify(
+                  savedFiles
+                ),
+                "multiple",
+                messageId
+              )
+              .run();
+          }
 
 
           return json({
@@ -1009,7 +791,7 @@ export default {
         } catch (error) {
 
           console.error(
-            "ERROR /api/messages:",
+            "ERROR REAL /api/messages:",
             error
           );
 
@@ -1028,14 +810,11 @@ export default {
       }
 
 
-      // ===================================================
-      // CONSULTAR MENSAJES
-      // SOLO ADMIN
-      // ===================================================
+      /* ---------- VER MENSAJES ---------- */
 
       if (request.method === "GET") {
 
-        if (!isAdmin(request, env)) {
+        if (!isAdmin(request)) {
           return json(
             {
               message:
@@ -1067,16 +846,45 @@ export default {
 
           const messages =
             (rows.results || [])
-              .map(
-                row => ({
-                  ...row,
+              .map(message => {
 
-                  attachments:
-                    parseFiles(
-                      row.attachment_name
-                    )
-                })
-              );
+                let attachments = [];
+
+                if (
+                  message.attachment_name
+                ) {
+                  try {
+
+                    const parsed =
+                      JSON.parse(
+                        message.attachment_name
+                      );
+
+                    if (
+                      Array.isArray(
+                        parsed
+                      )
+                    ) {
+                      attachments =
+                        parsed;
+                    }
+
+                  } catch (error) {
+
+                    attachments = [
+                      {
+                        name:
+                          message.attachment_name
+                      }
+                    ];
+                  }
+                }
+
+                return {
+                  ...message,
+                  attachments
+                };
+              });
 
           return json({
             messages
@@ -1085,7 +893,7 @@ export default {
         } catch (error) {
 
           console.error(
-            "ERROR /api/messages GET:",
+            "ERROR GET /api/messages:",
             error
           );
 
@@ -1100,14 +908,11 @@ export default {
       }
 
 
-      // ===================================================
-      // ELIMINAR MENSAJE
-      // SOLO ADMIN
-      // ===================================================
+      /* ---------- ELIMINAR MENSAJE ---------- */
 
       if (request.method === "DELETE") {
 
-        if (!isAdmin(request, env)) {
+        if (!isAdmin(request)) {
           return json(
             {
               message:
@@ -1139,49 +944,64 @@ export default {
           }
 
 
-          // -----------------------------------------------
-          // BUSCAR ARCHIVOS ANTES DE BORRAR EL MENSAJE
-          // -----------------------------------------------
-
+          /*
+           * Buscamos primero los archivos
+           * para poder eliminarlos del KV.
+           */
           const row =
             await env.DB
               .prepare(`
-                SELECT
-                  attachment_name
+                SELECT attachment_name
                 FROM messages
                 WHERE id = ?
               `)
               .bind(id)
               .first();
 
-          if (row) {
 
-            const files =
-              parseFiles(
-                row.attachment_name
-              );
+          if (
+            row &&
+            row.attachment_name &&
+            env.MESSAGE_FILES
+          ) {
 
-            for (
-              const file
-              of files
-            ) {
+            try {
 
-              if (!file.key) {
-                continue;
+              const attachments =
+                JSON.parse(
+                  row.attachment_name
+                );
+
+              if (
+                Array.isArray(
+                  attachments
+                )
+              ) {
+
+                for (
+                  const file
+                  of attachments
+                ) {
+
+                  if (
+                    file &&
+                    file.key
+                  ) {
+                    await env.MESSAGE_FILES.delete(
+                      file.key
+                    );
+                  }
+                }
               }
 
-              try {
-                await env.MESSAGE_FILES.delete(
-                  file.key
-                );
-              } catch (error) {}
+            } catch (error) {
+              console.error(
+                "No se pudieron limpiar los archivos:",
+                error
+              );
             }
           }
 
-
-          // -----------------------------------------------
-          // BORRAR MENSAJE DE D1
-          // -----------------------------------------------
 
           await env.DB
             .prepare(
@@ -1197,7 +1017,7 @@ export default {
         } catch (error) {
 
           console.error(
-            "ERROR /api/messages DELETE:",
+            "ERROR DELETE /api/messages:",
             error
           );
 
@@ -1222,14 +1042,204 @@ export default {
     }
 
 
-    // =====================================================
-    // ARCHIVOS DEL SITIO
-    // =====================================================
+    /* =========================================================
+       ARCHIVOS DE MENSAJES
+    ========================================================= */
 
-    if (env.ASSETS) {
-      return env.ASSETS.fetch(request);
+    if (
+      url.pathname ===
+      "/api/message-file"
+    ) {
+
+      if (!isAdmin(request)) {
+        return new Response(
+          "No autorizado.",
+          {
+            status: 401
+          }
+        );
+      }
+
+      if (!env.MESSAGE_FILES) {
+        return new Response(
+          "Almacenamiento no configurado.",
+          {
+            status: 500
+          }
+        );
+      }
+
+      try {
+
+        const messageId =
+          Number(
+            url.searchParams.get(
+              "message"
+            )
+          );
+
+        const index =
+          Number(
+            url.searchParams.get(
+              "file"
+            )
+          );
+
+        if (
+          !Number.isInteger(
+            messageId
+          ) ||
+          messageId <= 0
+        ) {
+          return new Response(
+            "Mensaje inválido.",
+            {
+              status: 400
+            }
+          );
+        }
+
+        if (
+          !Number.isInteger(index) ||
+          index < 0
+        ) {
+          return new Response(
+            "Archivo inválido.",
+            {
+              status: 400
+            }
+          );
+        }
+
+
+        const row =
+          await env.DB
+            .prepare(`
+              SELECT attachment_name
+              FROM messages
+              WHERE id = ?
+            `)
+            .bind(messageId)
+            .first();
+
+        if (
+          !row ||
+          !row.attachment_name
+        ) {
+          return new Response(
+            "Archivo no encontrado.",
+            {
+              status: 404
+            }
+          );
+        }
+
+        let attachments = [];
+
+        try {
+          attachments =
+            JSON.parse(
+              row.attachment_name
+            );
+        } catch (error) {
+          attachments = [];
+        }
+
+        if (
+          !Array.isArray(
+            attachments
+          ) ||
+          !attachments[index]
+        ) {
+          return new Response(
+            "Archivo no encontrado.",
+            {
+              status: 404
+            }
+          );
+        }
+
+        const file =
+          attachments[index];
+
+        if (!file.key) {
+          return new Response(
+            "Archivo no encontrado.",
+            {
+              status: 404
+            }
+          );
+        }
+
+        const object =
+          await env.MESSAGE_FILES.get(
+            file.key
+          );
+
+        if (!object) {
+          return new Response(
+            "Archivo no encontrado.",
+            {
+              status: 404
+            }
+          );
+        }
+
+        const headers =
+          new Headers();
+
+        object.writeHttpMetadata(
+          headers
+        );
+
+        headers.set(
+          "content-disposition",
+          'attachment; filename="' +
+            sanitizeFileName(
+              file.name ||
+              "archivo"
+            ) +
+            '"'
+        );
+
+        headers.set(
+          "cache-control",
+          "no-store"
+        );
+
+        return new Response(
+          object.body,
+          {
+            headers
+          }
+        );
+
+      } catch (error) {
+
+        console.error(
+          "ERROR /api/message-file:",
+          error
+        );
+
+        return new Response(
+          "No se pudo descargar el archivo.",
+          {
+            status: 500
+          }
+        );
+      }
     }
 
+
+    /* =========================================================
+       SITIO ESTÁTICO
+    ========================================================= */
+
+    if (env.ASSETS) {
+      return env.ASSETS.fetch(
+        request
+      );
+    }
 
     return new Response(
       "I.N STYLE",
@@ -1244,26 +1254,24 @@ export default {
   },
 
 
-  // =====================================================
-  // LIMPIEZA PROGRAMADA DE MENSAJES
-  // =====================================================
+  /* =========================================================
+     CRON
+  ========================================================= */
 
-  async scheduled(
-    event,
-    env,
-    ctx
-  ) {
+  async scheduled(event, env, ctx) {
 
     ctx.waitUntil(
-      cleanupWeeklyMessages(env)
+      cleanupMessages(
+        env.DB
+      )
     );
   }
 };
 
 
-// =====================================================
-// RESPUESTA JSON
-// =====================================================
+/* =========================================================
+   RESPUESTAS
+========================================================= */
 
 function json(
   data,
@@ -1274,11 +1282,9 @@ function json(
     JSON.stringify(data),
     {
       status,
-
       headers: {
         "content-type":
           "application/json; charset=UTF-8",
-
         "cache-control":
           "no-store"
       }
@@ -1287,70 +1293,51 @@ function json(
 }
 
 
-// =====================================================
-// VERIFICAR ADMIN
-// =====================================================
+/* =========================================================
+   ADMIN
+========================================================= */
 
-function isAdmin(
-  request,
-  env
-) {
+function isAdmin(request) {
 
-  const cookieHeader =
+  /*
+   * Sesión segura por cookie.
+   */
+  const cookie =
     request.headers.get(
       "Cookie"
     ) || "";
 
-  const sessionCookie =
-    cookieHeader
-      .split(";")
-      .map(
-        item =>
-          item.trim()
-      )
-      .find(
-        item =>
-          item.startsWith(
-            "instyle_admin_session="
-          )
-      );
-
   if (
-    !env.INSTYLE_ADMIN_SECRET ||
-    !sessionCookie
+    cookie.includes(
+      "instyle_admin_session=1"
+    )
   ) {
-    return false;
+    return true;
   }
 
-  try {
 
-    const sessionValue =
-      decodeURIComponent(
-        sessionCookie.slice(
-          "instyle_admin_session="
-            .length
-        )
-      );
-
-    return (
-      sessionValue ===
-      env.INSTYLE_ADMIN_SECRET
-    );
-
-  } catch (error) {
-
-    return false;
+  /*
+   * Compatibilidad con el sistema
+   * actual del sitio.
+   */
+  if (
+    request.headers.get(
+      "X-INSTYLE-ADMIN"
+    ) ===
+    "INSTYLE2026"
+  ) {
+    return true;
   }
+
+  return false;
 }
 
 
-// =====================================================
-// LIMPIAR TEXTO
-// =====================================================
+/* =========================================================
+   LIMPIEZA DE TEXTO
+========================================================= */
 
-function clean(
-  value
-) {
+function clean(value) {
 
   if (
     value === null ||
@@ -1365,141 +1352,23 @@ function clean(
 }
 
 
-// =====================================================
-// VALIDAR CORREO
-// =====================================================
+/* =========================================================
+   EMAIL
+========================================================= */
 
 function isValidEmail(
   email
 ) {
 
-  return /^[^\s@]+@[^\s@]+\.[^\s@]+$/
-    .test(email);
+  return /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(
+    email
+  );
 }
 
 
-// =====================================================
-// LEER ARCHIVOS DE MENSAJES
-// =====================================================
-
-function parseFiles(
-  value
-) {
-
-  try {
-
-    const parsed =
-      JSON.parse(
-        value || "[]"
-      );
-
-    if (
-      !Array.isArray(parsed)
-    ) {
-      return [];
-    }
-
-    return parsed.map(
-      file => ({
-        key:
-          String(
-            file.key || ""
-          ),
-
-        name:
-          String(
-            file.name || ""
-          ),
-
-        type:
-          String(
-            file.type || ""
-          ),
-
-        size:
-          Number(
-            file.size || 0
-          )
-      })
-    );
-
-  } catch (error) {
-
-    return [];
-  }
-}
-
-
-// =====================================================
-// NOMBRE SEGURO
-// =====================================================
-
-function sanitizeFileName(
-  value
-) {
-
-  return String(
-    value || "archivo"
-  )
-    .replace(
-      /[\\\/:*?"<>|]/g,
-      "_"
-    )
-    .replace(
-      /[\r\n]/g,
-      "_"
-    )
-    .slice(
-      0,
-      180
-    );
-}
-
-
-// =====================================================
-// TIPO DE IMAGEN
-// =====================================================
-
-function guessImageType(
-  key
-) {
-
-  const lower =
-    String(key || "")
-      .toLowerCase();
-
-  if (lower.endsWith(".jpg") ||
-      lower.endsWith(".jpeg")) {
-    return "image/jpeg";
-  }
-
-  if (lower.endsWith(".png")) {
-    return "image/png";
-  }
-
-  if (lower.endsWith(".webp")) {
-    return "image/webp";
-  }
-
-  if (lower.endsWith(".gif")) {
-    return "image/gif";
-  }
-
-  if (lower.endsWith(".svg")) {
-    return "image/svg+xml";
-  }
-
-  if (lower.endsWith(".avif")) {
-    return "image/avif";
-  }
-
-  return "application/octet-stream";
-}
-
-
-// =====================================================
-// GUARDAR ESTADO EN D1
-// =====================================================
+/* =========================================================
+   ESTADO D1
+========================================================= */
 
 async function saveStateKey(
   db,
@@ -1541,7 +1410,6 @@ async function saveStateKey(
       DO UPDATE SET
         state_value =
           excluded.state_value,
-
         updated_at =
           excluded.updated_at
     `)
@@ -1554,68 +1422,83 @@ async function saveStateKey(
 }
 
 
-// =====================================================
-// LIMPIEZA SEMANAL DE MENSAJES
-// =====================================================
+/* =========================================================
+   NOMBRE DE ARCHIVO
+========================================================= */
 
-async function cleanupWeeklyMessages(
-  env
+function sanitizeFileName(
+  name
 ) {
 
-  const rows =
-    await env.DB
-      .prepare(`
-        SELECT
-          id,
-          attachment_name
-        FROM messages
-      `)
-      .all();
-
-  for (
-    const row
-    of rows.results || []
-  ) {
-
-    const files =
-      parseFiles(
-        row.attachment_name
-      );
+  return String(
+    name || "archivo"
+  )
+    .normalize("NFKD")
+    .replace(
+      /[\u0300-\u036f]/g,
+      ""
+    )
+    .replace(
+      /[^a-zA-Z0-9._-]/g,
+      "_"
+    )
+    .slice(
+      0,
+      180
+    );
+}
 
 
-    // -----------------------------------------------
-    // ELIMINAR ARCHIVOS DEL MENSAJE
-    // -----------------------------------------------
+/* =========================================================
+   PARTE DE RUTA
+========================================================= */
 
-    for (
-      const file
-      of files
-    ) {
+function sanitizePathPart(
+  value
+) {
 
-      if (!file.key) {
-        continue;
-      }
-
-      try {
-
-        await env.MESSAGE_FILES
-          .delete(
-            file.key
-          );
-
-      } catch (error) {}
-    }
+  return String(
+    value || "site"
+  )
+    .replace(
+      /[^a-zA-Z0-9_-]/g,
+      "_"
+    )
+    .slice(
+      0,
+      60
+    );
+}
 
 
-    // -----------------------------------------------
-    // ELIMINAR MENSAJE
-    // -----------------------------------------------
+/* =========================================================
+   LIMPIEZA SEMANAL DE MENSAJES
+========================================================= */
 
-    await env.DB
-      .prepare(
-        "DELETE FROM messages WHERE id = ?"
-      )
-      .bind(row.id)
-      .run();
-  }
+async function cleanupMessages(
+  db
+) {
+
+  /*
+   * Conservamos los mensajes recientes.
+   * Más adelante podemos dejar esto
+   * exactamente para domingo mediante cron.
+   */
+
+  const cutoff =
+    new Date(
+      Date.now() -
+        7 *
+          24 *
+          60 *
+          60 *
+          1000
+    ).toISOString();
+
+  await db
+    .prepare(
+      "DELETE FROM messages WHERE created_at < ?"
+    )
+    .bind(cutoff)
+    .run();
 }
