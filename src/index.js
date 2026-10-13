@@ -16,16 +16,12 @@ export default {
         const secret = clean(body.secret);
 
         if (!secret) {
-          return json({ message: "Ingresá la clave de administración." }, 400);
+          return json(
+            { message: "Ingresá la clave de administración." },
+            400
+          );
         }
 
-        /*
-         * La clave verdadera vive en el secreto de Cloudflare:
-         * INSTYLE_ADMIN_SECRET
-         *
-         * También mantenemos compatibilidad con el código
-         * que usa actualmente el sitio.
-         */
         const valid =
           (env.INSTYLE_ADMIN_SECRET &&
             secret === env.INSTYLE_ADMIN_SECRET) ||
@@ -68,7 +64,6 @@ export default {
       }
     }
 
-
     /* =========================================================
        LOGOUT ADMIN
     ========================================================= */
@@ -85,9 +80,7 @@ export default {
       );
 
       return new Response(
-        JSON.stringify({
-          ok: true
-        }),
+        JSON.stringify({ ok: true }),
         {
           status: 200,
           headers
@@ -95,14 +88,11 @@ export default {
       );
     }
 
-
     /* =========================================================
-       ESTADO DEL SITIO
+       ESTADO DEL SITIO — D1
     ========================================================= */
 
     if (url.pathname === "/api/state") {
-
-      /* ---------- LEER ---------- */
 
       if (request.method === "GET") {
         try {
@@ -118,9 +108,7 @@ export default {
             state[row.state_key] = row.state_value;
           }
 
-          return json({
-            state
-          });
+          return json({ state });
 
         } catch (error) {
           console.error("ERROR GET /api/state:", error);
@@ -135,16 +123,11 @@ export default {
         }
       }
 
-
-      /* ---------- GUARDAR ---------- */
-
       if (request.method === "POST") {
 
         if (!isAdmin(request)) {
           return json(
-            {
-              message: "No autorizado."
-            },
+            { message: "No autorizado." },
             401
           );
         }
@@ -159,9 +142,7 @@ export default {
               body.value
             );
 
-            return json({
-              ok: true
-            });
+            return json({ ok: true });
           }
 
           if (
@@ -178,15 +159,11 @@ export default {
               );
             }
 
-            return json({
-              ok: true
-            });
+            return json({ ok: true });
           }
 
           return json(
-            {
-              message: "Estado inválido."
-            },
+            { message: "Estado inválido." },
             400
           );
 
@@ -204,24 +181,20 @@ export default {
       }
 
       return json(
-        {
-          message: "Método no permitido."
-        },
+        { message: "Método no permitido." },
         405
       );
     }
 
-
     /* =========================================================
        ARCHIVOS DEL SITIO
        
-       Sirve para:
-       - Instagram
-       - Promoción
-       - Tutoriales
-       - Fan Groups
-       - Home
-       - cualquier imagen futura
+       Instagram
+       Promoción
+       Tutoriales
+       Fan Groups
+       Home
+       futuras imágenes
     ========================================================= */
 
     if (url.pathname === "/api/site-file") {
@@ -232,9 +205,7 @@ export default {
 
         if (!isAdmin(request)) {
           return json(
-            {
-              message: "No autorizado."
-            },
+            { message: "No autorizado." },
             401
           );
         }
@@ -253,6 +224,7 @@ export default {
           const form = await request.formData();
 
           const file = form.get("file");
+
           const prefix =
             clean(form.get("prefix")) || "site";
 
@@ -272,9 +244,6 @@ export default {
 
           const size = Number(file.size || 0);
 
-          /*
-           * Límite individual para imágenes del sitio.
-           */
           if (size > 8 * 1024 * 1024) {
             return json(
               {
@@ -288,9 +257,6 @@ export default {
           const type =
             String(file.type || "").toLowerCase();
 
-          /*
-           * Permitimos imágenes y documentos comunes.
-           */
           const allowedTypes = [
             "image/jpeg",
             "image/png",
@@ -343,6 +309,7 @@ export default {
                 contentType:
                   type ||
                   "application/octet-stream",
+
                 cacheControl:
                   "public, max-age=31536000"
               }
@@ -352,6 +319,7 @@ export default {
           return json({
             ok: true,
             key,
+
             url:
               "/api/site-file?key=" +
               encodeURIComponent(key)
@@ -367,6 +335,7 @@ export default {
             {
               message:
                 "No se pudo guardar la imagen.",
+
               error:
                 String(
                   error?.message || error
@@ -377,7 +346,6 @@ export default {
         }
       }
 
-
       /* ---------- MOSTRAR ---------- */
 
       if (request.method === "GET") {
@@ -385,9 +353,7 @@ export default {
         if (!env.MESSAGE_FILES) {
           return new Response(
             "Almacenamiento no configurado.",
-            {
-              status: 500
-            }
+            { status: 500 }
           );
         }
 
@@ -398,22 +364,14 @@ export default {
           if (!key) {
             return new Response(
               "Archivo no especificado.",
-              {
-                status: 400
-              }
+              { status: 400 }
             );
           }
 
-          /*
-           * Solo permitimos archivos dentro
-           * del espacio site/.
-           */
           if (!key.startsWith("site/")) {
             return new Response(
               "Archivo inválido.",
-              {
-                status: 400
-              }
+              { status: 400 }
             );
           }
 
@@ -423,18 +381,14 @@ export default {
           if (!object) {
             return new Response(
               "Archivo no encontrado.",
-              {
-                status: 404
-              }
+              { status: 404 }
             );
           }
 
           const headers =
             new Headers();
 
-          object.writeHttpMetadata(
-            headers
-          );
+          object.writeHttpMetadata(headers);
 
           headers.set(
             "cache-control",
@@ -443,9 +397,7 @@ export default {
 
           return new Response(
             object.body,
-            {
-              headers
-            }
+            { headers }
           );
 
         } catch (error) {
@@ -456,23 +408,16 @@ export default {
 
           return new Response(
             "No se pudo abrir el archivo.",
-            {
-              status: 500
-            }
+            { status: 500 }
           );
         }
       }
 
-
       return json(
-        {
-          message:
-            "Método no permitido."
-        },
+        { message: "Método no permitido." },
         405
       );
     }
-
 
     /* =========================================================
        MENSAJES DE VISITANTES
@@ -488,7 +433,6 @@ export default {
           error
         );
       }
-
 
       /* ---------- RECIBIR MENSAJE ---------- */
 
@@ -511,9 +455,7 @@ export default {
             );
 
           const email =
-            clean(
-              form.get("email")
-            );
+            clean(form.get("email"));
 
           const description =
             clean(
@@ -522,14 +464,10 @@ export default {
             );
 
           const honeypot =
-            clean(
-              form.get("website")
-            );
+            clean(form.get("website"));
 
           if (honeypot) {
-            return json({
-              ok: true
-            });
+            return json({ ok: true });
           }
 
           if (
@@ -571,15 +509,14 @@ export default {
             );
           }
 
-
           /* ---------- ARCHIVOS ---------- */
 
           const files = [];
 
-          for (const [
-            fieldName,
-            value
-          ] of form.entries()) {
+          for (
+            const [fieldName, value]
+            of form.entries()
+          ) {
 
             if (
               !fieldName.startsWith(
@@ -602,9 +539,7 @@ export default {
 
             if (!size) continue;
 
-            if (
-              !env.MESSAGE_FILES
-            ) {
+            if (!env.MESSAGE_FILES) {
               return json(
                 {
                   message:
@@ -629,23 +564,21 @@ export default {
             files.push({
               originalName:
                 String(
-                  value.name || "archivo"
+                  value.name ||
+                  "archivo"
                 ),
+
               type:
                 String(
                   value.type || ""
                 ),
+
               size,
-              file:
-                value
+
+              file: value
             });
           }
 
-
-          /*
-           * Límite total del mensaje:
-           * 8 MB.
-           */
           const totalSize =
             files.reduce(
               (total, file) =>
@@ -665,7 +598,6 @@ export default {
               400
             );
           }
-
 
           /* ---------- CREAR MENSAJE ---------- */
 
@@ -706,7 +638,6 @@ export default {
             );
 
           const savedFiles = [];
-
 
           /* ---------- GUARDAR ARCHIVOS ---------- */
 
@@ -749,14 +680,16 @@ export default {
             savedFiles.push({
               name:
                 item.originalName,
+
               type:
                 item.type,
+
               size:
                 item.size,
+
               key
             });
           }
-
 
           /* ---------- ACTUALIZAR DATOS ---------- */
 
@@ -780,10 +713,10 @@ export default {
               .run();
           }
 
-
           return json({
             ok: true,
             emailSent: false,
+
             message:
               "Mensaje recibido. El equipo de I.N STYLE lo verá pronto."
           });
@@ -809,23 +742,18 @@ export default {
         }
       }
 
-
       /* ---------- VER MENSAJES ---------- */
 
       if (request.method === "GET") {
 
         if (!isAdmin(request)) {
           return json(
-            {
-              message:
-                "No autorizado."
-            },
+            { message: "No autorizado." },
             401
           );
         }
 
         try {
-
           const rows =
             await env.DB
               .prepare(`
@@ -861,9 +789,7 @@ export default {
                       );
 
                     if (
-                      Array.isArray(
-                        parsed
-                      )
+                      Array.isArray(parsed)
                     ) {
                       attachments =
                         parsed;
@@ -907,17 +833,13 @@ export default {
         }
       }
 
-
       /* ---------- ELIMINAR MENSAJE ---------- */
 
       if (request.method === "DELETE") {
 
         if (!isAdmin(request)) {
           return json(
-            {
-              message:
-                "No autorizado."
-            },
+            { message: "No autorizado." },
             401
           );
         }
@@ -943,11 +865,6 @@ export default {
             );
           }
 
-
-          /*
-           * Buscamos primero los archivos
-           * para poder eliminarlos del KV.
-           */
           const row =
             await env.DB
               .prepare(`
@@ -957,7 +874,6 @@ export default {
               `)
               .bind(id)
               .first();
-
 
           if (
             row &&
@@ -973,9 +889,7 @@ export default {
                 );
 
               if (
-                Array.isArray(
-                  attachments
-                )
+                Array.isArray(attachments)
               ) {
 
                 for (
@@ -1002,7 +916,6 @@ export default {
             }
           }
 
-
           await env.DB
             .prepare(
               "DELETE FROM messages WHERE id = ?"
@@ -1010,9 +923,7 @@ export default {
             .bind(id)
             .run();
 
-          return json({
-            ok: true
-          });
+          return json({ ok: true });
 
         } catch (error) {
 
@@ -1031,16 +942,11 @@ export default {
         }
       }
 
-
       return json(
-        {
-          message:
-            "Método no permitido."
-        },
+        { message: "Método no permitido." },
         405
       );
     }
-
 
     /* =========================================================
        ARCHIVOS DE MENSAJES
@@ -1054,18 +960,14 @@ export default {
       if (!isAdmin(request)) {
         return new Response(
           "No autorizado.",
-          {
-            status: 401
-          }
+          { status: 401 }
         );
       }
 
       if (!env.MESSAGE_FILES) {
         return new Response(
           "Almacenamiento no configurado.",
-          {
-            status: 500
-          }
+          { status: 500 }
         );
       }
 
@@ -1086,16 +988,12 @@ export default {
           );
 
         if (
-          !Number.isInteger(
-            messageId
-          ) ||
+          !Number.isInteger(messageId) ||
           messageId <= 0
         ) {
           return new Response(
             "Mensaje inválido.",
-            {
-              status: 400
-            }
+            { status: 400 }
           );
         }
 
@@ -1105,12 +1003,9 @@ export default {
         ) {
           return new Response(
             "Archivo inválido.",
-            {
-              status: 400
-            }
+            { status: 400 }
           );
         }
-
 
         const row =
           await env.DB
@@ -1128,9 +1023,7 @@ export default {
         ) {
           return new Response(
             "Archivo no encontrado.",
-            {
-              status: 404
-            }
+            { status: 404 }
           );
         }
 
@@ -1146,16 +1039,12 @@ export default {
         }
 
         if (
-          !Array.isArray(
-            attachments
-          ) ||
+          !Array.isArray(attachments) ||
           !attachments[index]
         ) {
           return new Response(
             "Archivo no encontrado.",
-            {
-              status: 404
-            }
+            { status: 404 }
           );
         }
 
@@ -1165,9 +1054,7 @@ export default {
         if (!file.key) {
           return new Response(
             "Archivo no encontrado.",
-            {
-              status: 404
-            }
+            { status: 404 }
           );
         }
 
@@ -1179,18 +1066,14 @@ export default {
         if (!object) {
           return new Response(
             "Archivo no encontrado.",
-            {
-              status: 404
-            }
+            { status: 404 }
           );
         }
 
         const headers =
           new Headers();
 
-        object.writeHttpMetadata(
-          headers
-        );
+        object.writeHttpMetadata(headers);
 
         headers.set(
           "content-disposition",
@@ -1209,9 +1092,7 @@ export default {
 
         return new Response(
           object.body,
-          {
-            headers
-          }
+          { headers }
         );
 
       } catch (error) {
@@ -1223,22 +1104,17 @@ export default {
 
         return new Response(
           "No se pudo descargar el archivo.",
-          {
-            status: 500
-          }
+          { status: 500 }
         );
       }
     }
-
 
     /* =========================================================
        SITIO ESTÁTICO
     ========================================================= */
 
     if (env.ASSETS) {
-      return env.ASSETS.fetch(
-        request
-      );
+      return env.ASSETS.fetch(request);
     }
 
     return new Response(
@@ -1253,17 +1129,13 @@ export default {
     );
   },
 
-
   /* =========================================================
      CRON
   ========================================================= */
 
   async scheduled(event, env, ctx) {
-
     ctx.waitUntil(
-      cleanupMessages(
-        env.DB
-      )
+      cleanupMessages(env.DB)
     );
   }
 };
@@ -1277,14 +1149,15 @@ function json(
   data,
   status = 200
 ) {
-
   return new Response(
     JSON.stringify(data),
     {
       status,
+
       headers: {
         "content-type":
           "application/json; charset=UTF-8",
+
         "cache-control":
           "no-store"
       }
@@ -1299,13 +1172,8 @@ function json(
 
 function isAdmin(request) {
 
-  /*
-   * Sesión segura por cookie.
-   */
   const cookie =
-    request.headers.get(
-      "Cookie"
-    ) || "";
+    request.headers.get("Cookie") || "";
 
   if (
     cookie.includes(
@@ -1315,11 +1183,11 @@ function isAdmin(request) {
     return true;
   }
 
-
   /*
    * Compatibilidad con el sistema
    * actual del sitio.
    */
+
   if (
     request.headers.get(
       "X-INSTYLE-ADMIN"
@@ -1346,9 +1214,7 @@ function clean(value) {
     return "";
   }
 
-  return String(
-    value
-  ).trim();
+  return String(value).trim();
 }
 
 
@@ -1356,9 +1222,7 @@ function clean(value) {
    EMAIL
 ========================================================= */
 
-function isValidEmail(
-  email
-) {
+function isValidEmail(email) {
 
   return /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(
     email
@@ -1410,6 +1274,7 @@ async function saveStateKey(
       DO UPDATE SET
         state_value =
           excluded.state_value,
+
         updated_at =
           excluded.updated_at
     `)
@@ -1426,9 +1291,7 @@ async function saveStateKey(
    NOMBRE DE ARCHIVO
 ========================================================= */
 
-function sanitizeFileName(
-  name
-) {
+function sanitizeFileName(name) {
 
   return String(
     name || "archivo"
@@ -1453,9 +1316,7 @@ function sanitizeFileName(
    PARTE DE RUTA
 ========================================================= */
 
-function sanitizePathPart(
-  value
-) {
+function sanitizePathPart(value) {
 
   return String(
     value || "site"
@@ -1475,15 +1336,7 @@ function sanitizePathPart(
    LIMPIEZA SEMANAL DE MENSAJES
 ========================================================= */
 
-async function cleanupMessages(
-  db
-) {
-
-  /*
-   * Conservamos los mensajes recientes.
-   * Más adelante podemos dejar esto
-   * exactamente para domingo mediante cron.
-   */
+async function cleanupMessages(db) {
 
   const cutoff =
     new Date(
