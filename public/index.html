@@ -2193,7 +2193,7 @@ footer p {
     id="homeButton"
     class="site-logo"
     aria-label="Ir al inicio">
-    FAN - I.N
+    I.N STYLE
   </button>
 
   <button
@@ -2468,13 +2468,13 @@ footer p {
 
     <div class="trace-intro">
 
-      <p class="label" id="traceLabel">FAN - I.N — HERRAMIENTAS</p>
+      <p class="label" id="traceLabel">FAN - I.N — TOOLS</p>
 
       <h1 id="traceTitle">INNIE'S<br>TRACE</h1>
 
       <p>
-        <span id="traceIntroText">Herramientas creadas para seguir y analizar
-        diferentes aspectos relacionados con I.N.</span>
+        Herramientas creadas para seguir y analizar
+        diferentes aspectos relacionados con I.N.
       </p>
 
     </div>
@@ -3656,7 +3656,7 @@ footer p {
 <main id="contact" class="page">
   <section class="contact-page">
     <div class="contact-card">
-      <p class="label">FAN - I.N · STAY</p>
+      <p class="label">I.N STYLE · STAY</p>
       <h1 id="contactTitle">DEJÁ TU MENSAJE</h1>
       <p id="contactText">¿Tenés una sugerencia, reclamo, queja, consulta o querés reportar contenido malicioso relacionado con I.N? Elegí el motivo y contanos qué pasó.</p>
 
@@ -3821,7 +3821,7 @@ footer p {
 ===================================================== -->
 
 <footer id="siteFooter" class="site-signature">
-  <p id="siteSignatureMain" class="site-signature-main">Hecho por I.N Argentina para Fans</p>
+  <p id="siteSignatureMain" class="site-signature-main">Hecho por I.N Argentina para fans.</p>
   <p id="siteSignatureCollaborators" class="site-signature-collaborators" hidden></p>
 </footer>
 
@@ -5594,7 +5594,7 @@ body:not(.admin-mode) .promotion-editor {
   document.querySelectorAll('[data-voting-tab]').forEach(function(tab){tab.addEventListener('click',function(){const target=tab.dataset.votingTab;document.querySelectorAll('[data-voting-tab]').forEach(function(t){const active=t.dataset.votingTab===target;t.classList.toggle('active',active);t.setAttribute('aria-selected',active?'true':'false')});document.querySelectorAll('[data-voting-panel]').forEach(function(panel){const active=panel.dataset.votingPanel===target;panel.classList.toggle('active',active);panel.hidden=!active});});});
   function renderPublic(){const now=new Date();const active=votings.filter(v=>v.status==='active'&&(!v.end||new Date(v.end+'T23:59:59')>=now)).sort(sortActive);const finished=votings.filter(v=>v.status==='finished'||(v.end&&new Date(v.end+'T23:59:59')<now)).sort(sortFinished);$('activeVotingCount').textContent=active.length;$('finishedVotingCount').textContent=finished.length;$('activeVotingList').innerHTML=active.length?active.map(card).join(''):'<p class="voting-empty">SIN VOTACIONES ACTIVAS</p>';$('finishedVotingList').innerHTML=finished.length?finished.map(card).join(''):'<p class="voting-empty">Todavía no hay votaciones finalizadas.</p>';document.querySelectorAll('[data-open-tutorial]').forEach(b=>b.addEventListener('click',()=>{openTutorialPublic(b.dataset.openTutorial)}));}
   function openTutorialPublic(id){showPage('tutoriales');setTimeout(()=>{const el=document.querySelector('[data-tutorial-id="'+CSS.escape(id)+'"]');if(el){el.scrollIntoView({behavior:'smooth',block:'center'});el.classList.add('tutorial-highlight');setTimeout(()=>el.classList.remove('tutorial-highlight'),1600)}},80)}
-  function renderAdmin(){const list=$('votingAdminList');if(!votings.length){list.innerHTML='<p class="voting-help">Todavía no hay votaciones cargadas.</p>';return}list.innerHTML=votings.map(v=>'<div class="voting-admin-row" data-id="'+esc(v.id)+'"><span class="voting-admin-name">'+esc(v.title)+'<small>'+(v.type==='instyle'?'FAN - I.N':'FICHA · '+esc(v.app))+' · '+(v.status==='active'?'EN CURSO':'FINALIZADA')+(v.priority&&v.priority!=='none'?' · '+esc(v.priority.toUpperCase()):'')+'</small></span><button data-act="up">↑</button><button data-act="down">↓</button><button data-act="edit">EDITAR</button><button class="delete" data-act="delete">BORRAR</button></div>').join('');list.querySelectorAll('button').forEach(b=>b.addEventListener('click',()=>adminAction(b.closest('.voting-admin-row').dataset.id,b.dataset.act)));}
+  function renderAdmin(){const list=$('votingAdminList');if(!votings.length){list.innerHTML='<p class="voting-help">Todavía no hay votaciones cargadas.</p>';return}list.innerHTML=votings.map(v=>'<div class="voting-admin-row" data-id="'+esc(v.id)+'"><span class="voting-admin-name">'+esc(v.title)+'<small>'+(v.type==='instyle'?'I.N STYLE':'FICHA · '+esc(v.app))+' · '+(v.status==='active'?'EN CURSO':'FINALIZADA')+(v.priority&&v.priority!=='none'?' · '+esc(v.priority.toUpperCase()):'')+'</small></span><button data-act="up">↑</button><button data-act="down">↓</button><button data-act="edit">EDITAR</button><button class="delete" data-act="delete">BORRAR</button></div>').join('');list.querySelectorAll('button').forEach(b=>b.addEventListener('click',()=>adminAction(b.closest('.voting-admin-row').dataset.id,b.dataset.act)));}
   function resetVoting(){editingVotingId=null;$('votingEditor').hidden=true;$('votingTitle').value='';$('votingApp').value='';$('votingCategory').value='';$('votingGoal').value='';$('votingLink').value='';$('votingQuestion').value='';$('votingDescription').value='';$('votingStart').value='';$('votingEnd').value='';$('votingPriority').value='none';$('votingImportant').checked=false;$('votingStatus').value='active';$('votingResult').value='pending';$('votingOptionsWrap').innerHTML='';$('votingEditType').value='external';$('externalFields').hidden=false;$('instyleFields').hidden=true;$('votingMessage').textContent='';}
   function addOption(value=''){const row=document.createElement('div');row.className='voting-option-row';row.innerHTML='<input class="voting-option-input" type="text" placeholder="Opción" value="'+esc(value)+'"><button type="button" class="voting-small-action remove-option">×</button>';row.querySelector('.remove-option').addEventListener('click',()=>row.remove());$('votingOptionsWrap').appendChild(row);}
   function openVotingEditor(type,item){resetVoting();editingVotingId=item?item.id:null;$('votingEditType').value=type;$('votingEditorTitle').textContent=item?'EDITAR '+(type==='instyle'?'VOTACIÓN':'FICHA'):'NUEVA '+(type==='instyle'?'VOTACIÓN':'FICHA');$('votingEditor').hidden=false;$('externalFields').hidden=type==='instyle';$('instyleFields').hidden=type!=='instyle';if(item){$('votingTitle').value=item.title||'';$('votingApp').value=item.app||'';$('votingCategory').value=item.category||'';$('votingGoal').value=item.goal||'';$('votingLink').value=item.link||'';$('votingQuestion').value=item.question||'';$('votingDescription').value=item.description||'';$('votingStart').value=item.start||'';$('votingEnd').value=item.end||'';$('votingPriority').value=item.priority||'none';$('votingImportant').checked=!!item.important;$('votingStatus').value=item.status||'active';$('votingResult').value=item.result||'pending';(item.options||[]).forEach(addOption);}else if(type==='instyle'){addOption();addOption();} $('votingEditor').scrollIntoView({behavior:'smooth',block:'center'});}
@@ -5869,6 +5869,7 @@ document.addEventListener('DOMContentLoaded',function(){
       // La sesión NO se borra al cargar: permanece hasta CERRAR SESIÓN.
    // Esto evita que un cambio de vista/recarga interrumpa el modo administradora.
       localStorage.removeItem('instyleAdminSession');
+      fetch('/api/admin-logout',{method:'POST',credentials:'same-origin'}).catch(()=>{});
       document.body.classList.remove('admin-mode');
       const panel=byId('adminPanel'),login=byId('adminLogin'),code=byId('centralAdminCode'),msg=byId('centralAdminMessage');
       if(panel)panel.hidden=true;
@@ -5946,29 +5947,66 @@ document.addEventListener('DOMContentLoaded',function(){
   function openHomeEditor(){byId('adminHomeEditor').hidden=false;loadHomeForm();byId('adminHomeEditor').scrollIntoView({behavior:'smooth',block:'start'});}
   function saveHome(){
     home.aboutText=byId('homeAboutTextEditor').value.trim();home.bottegaText=byId('homeBottegaTextEditor').value.trim();home.bottegaUrl=safeHttp(byId('homeBottegaUrl').value);home.damianiText=byId('homeDamianiTextEditor').value.trim();home.damianiUrl=safeHttp(byId('homeDamianiUrl').value);home.signature=byId('homeSignatureEditor').value.trim()||'I.N Argentina';home.collaborators=byId('homeCollaboratorsEditor').value.trim();SOCIALS.forEach(k=>{home.socials[k]=safeHttp(byId('social'+k.charAt(0).toUpperCase()+k.slice(1)).value)});
-    localStorage.setItem(HOME_KEY,JSON.stringify(home));applyHome();byId('homeEditorMessage').style.color='#315d39';byId('homeEditorMessage').textContent='✓ Cambios de Inicio guardados.';
+    localStorage.setItem(HOME_KEY,JSON.stringify(home));applyHome();
+    if(window.instyleCloudSync&&typeof window.instyleCloudSync.pushAll==='function'){
+      window.instyleCloudSync.pushAll().then(()=>{
+        byId('homeEditorMessage').style.color='#315d39';
+        byId('homeEditorMessage').textContent='✓ Cambios de Inicio guardados y sincronizados.';
+      }).catch(()=>{
+        byId('homeEditorMessage').style.color='#315d39';
+        byId('homeEditorMessage').textContent='✓ Cambios de Inicio guardados.';
+      });
+    }else{
+      byId('homeEditorMessage').style.color='#315d39';
+      byId('homeEditorMessage').textContent='✓ Cambios de Inicio guardados.';
+    }
   }
   const SITE_TEXTS_KEY='instyleSiteTextsV1';
   const SITE_TEXT_IDS=['textHomeHeroQuote','textHomeAboutTitle','textHomeAboutLabel','textHomeLuxuryLabel','textHomeLuxuryTitle','textHomeLuxuryIntro','textHomeFollowLabel','textHomeFollowTitle','textTraceLabel','textTraceTitle','textTraceInstagram','textTracePromotion','textTraceGenerator','textTraceImpact','textInstagramIntro','textPromotionIntro','textGeneratorIntro','textMivIntro','textVotingIntro','textStreamingIntro','textTutorialIntro','textFangroupsIntro'];
   function getSiteTexts(){try{const x=JSON.parse(localStorage.getItem(SITE_TEXTS_KEY)||'{}');return x&&typeof x==='object'?x:{};}catch(e){return {};}}
   function loadSiteTextsForm(){const data=getSiteTexts();SITE_TEXT_IDS.forEach(id=>{const el=byId(id);if(el)el.value=data[id]||'';});}
-  function setText(id,value){const el=byId(id);if(!el)return;const v=String(value??'');if(el.tagName==='INPUT'||el.tagName==='TEXTAREA')el.value=v;else el.textContent=v;}
-  function applySiteTexts(){
-    const d=getSiteTexts();
-    // Cargar el editor y, al mismo tiempo, aplicar los cambios al sitio público.
-    loadSiteTextsForm();
-    const map={
-      textHomeHeroQuote:'homeHeroQuote', textHomeAboutTitle:'homeAboutTitle', textHomeAboutLabel:'homeAboutLabel',
-      textHomeLuxuryLabel:'homeLuxuryLabel', textHomeLuxuryTitle:'homeLuxuryTitle', textHomeLuxuryIntro:'homeLuxuryIntro',
-      textHomeFollowLabel:'homeFollowLabel', textHomeFollowTitle:'homeFollowTitle', textTraceLabel:'traceLabel',
-      textTraceTitle:'traceTitle', textTraceInstagram:'traceInstagramCardText', textTracePromotion:'tracePromotionCardText',
-      textTraceGenerator:'traceGeneratorCardText', textTraceImpact:'traceImpactCardText', textInstagramIntro:'instagramIntro',
-      textPromotionIntro:'promotionIntro', textGeneratorIntro:'generatorIntro', textMivIntro:'mivIntro', textVotingIntro:'votingIntro',
-      textStreamingIntro:'streamingIntro', textTutorialIntro:'tutorialIntro', textFangroupsIntro:'fangroupsIntro'
-    };
-    Object.keys(map).forEach(k=>{if(Object.prototype.hasOwnProperty.call(d,k))setText(map[k],d[k]);});
+  function saveSiteTexts(){
+    const data=getSiteTexts();
+    SITE_TEXT_IDS.forEach(id=>{const el=byId(id);if(el)data[id]=el.value;});
+    localStorage.setItem(SITE_TEXTS_KEY,JSON.stringify(data));
+    applySiteTexts();
+    const m=byId('siteTextsMessage');
+    if(window.instyleCloudSync&&typeof window.instyleCloudSync.pushAll==='function'){
+      window.instyleCloudSync.pushAll().then(()=>{
+        if(m){m.style.color='#315d39';m.textContent='✓ Textos guardados, aplicados y sincronizados.';}
+      }).catch(()=>{
+        if(m){m.style.color='#315d39';m.textContent='✓ Textos guardados y aplicados.';}
+      });
+    }else if(m){m.style.color='#315d39';m.textContent='✓ Textos guardados y aplicados.';}
   }
-  function saveSiteTexts(){const data=getSiteTexts();SITE_TEXT_IDS.forEach(id=>{const el=byId(id);if(el)data[id]=el.value;});localStorage.setItem(SITE_TEXTS_KEY,JSON.stringify(data));applySiteTexts();const m=byId('siteTextsMessage');if(m){m.style.color='#315d39';m.textContent='✓ Textos guardados y aplicados al sitio.';}}
+  function applySiteTexts(){
+    const data=getSiteTexts();
+    loadSiteTextsForm();
+    const setText=(id,value)=>{const el=byId(id);if(el&&value!==undefined&&value!=='')el.textContent=value;};
+    const setHtmlParagraphs=(id,value)=>{const el=byId(id);if(!el||value===undefined||value==='')return;el.innerHTML=String(value).split(/\n\s*\n/).map(x=>'<p>'+escapeHtml(x).replace(/\n/g,'<br>')+'</p>').join('');};
+    setText('homeHeroQuote',data.textHomeHeroQuote);
+    setText('homeAboutTitle',data.textHomeAboutTitle);
+    setText('homeAboutLabel',data.textHomeAboutLabel);
+    setText('homeLuxuryLabel',data.textHomeLuxuryLabel);
+    setText('homeLuxuryTitle',data.textHomeLuxuryTitle);
+    setHtmlParagraphs('homeLuxuryIntro',data.textHomeLuxuryIntro);
+    setText('homeFollowLabel',data.textHomeFollowLabel);
+    setText('homeFollowTitle',data.textHomeFollowTitle);
+    setText('traceLabel',data.textTraceLabel);
+    setText('traceTitle',data.textTraceTitle);
+    setText('traceInstagramCardText',data.textTraceInstagram);
+    setText('tracePromotionCardText',data.textTracePromotion);
+    setText('traceGeneratorCardText',data.textTraceGenerator);
+    setText('traceImpactCardText',data.textTraceImpact);
+    setText('instagramIntro',data.textInstagramIntro);
+    setText('promotionIntro',data.textPromotionIntro);
+    setText('generatorIntro',data.textGeneratorIntro);
+    setText('mivIntro',data.textMivIntro);
+    setText('votingIntro',data.textVotingIntro);
+    setText('streamingIntro',data.textStreamingIntro);
+    setText('tutorialIntro',data.textTutorialIntro);
+    setText('fangroupsIntro',data.textFangroupsIntro);
+  }
   // =====================================================
   // ARCHIVOS DEL SITIO — almacenamiento en KV, no Base64
   // =====================================================
@@ -5987,8 +6025,7 @@ document.addEventListener('DOMContentLoaded',function(){
     });
     const result = await response.json().catch(()=>({}));
     if(!response.ok) throw new Error(result.message || 'No se pudo subir el archivo.');
-    const rawUrl = result.url || result.fileUrl || result.path;
-    const url = rawUrl ? new URL(rawUrl, window.location.origin).href : '';
+    const url = result.url || result.fileUrl || result.path;
     if(!url) throw new Error('El servidor guardó el archivo pero no devolvió su enlace.');
     return url;
   };
@@ -6044,12 +6081,20 @@ document.addEventListener('DOMContentLoaded',function(){
     },100);
   });
 
+  window.addEventListener('instyle:cloud-updated',function(){
+    try{
+      const stored=getStored(HOME_KEY,defaultHome);
+      home={...defaultHome,...stored,socials:{...defaultHome.socials,...(stored.socials||{})}};
+      applyHome();
+      applySiteTexts();
+      renderContact();
+    }catch(e){console.error('FAN - I.N cloud refresh:',e);}
+  });
   document.addEventListener('DOMContentLoaded',function(){
     // La sesión ya fue limpiada al iniciar el documento. No se vuelve a borrar
     // al navegar entre las secciones.
     keepAdminUI();
     applyHome();applySiteTexts();renderContact();
-    window.addEventListener('instyle:cloud-updated',function(){applyHome();applySiteTexts();renderContact();});
     const login=byId('adminLogin'),panel=byId('adminPanel'),code=byId('centralAdminCode'),unlockButton=byId('centralAdminUnlock'),msg=byId('centralAdminMessage');
     function unlock(){
       if(!code||!login||!panel)return;
@@ -6060,6 +6105,7 @@ document.addEventListener('DOMContentLoaded',function(){
         localStorage.setItem('instyleAdminSession','1');
         document.body.classList.add('admin-mode');
         if(msg)msg.textContent='';
+        fetch('/api/admin-login',{method:'POST',credentials:'same-origin',headers:{'Content-Type':'application/json'},body:JSON.stringify({secret:ADMIN_CODE})}).catch(()=>{});
         if(typeof window.refreshInstyleAdminFloat==='function') window.refreshInstyleAdminFloat();
       }else{
         if(msg)msg.textContent='El código ingresado no es correcto.';
@@ -6372,6 +6418,7 @@ document.addEventListener('DOMContentLoaded',function(){
   window.instAdminLogout=function(){
     try{
       localStorage.removeItem('instyleAdminSession');
+      fetch('/api/admin-logout',{method:'POST',credentials:'same-origin'}).catch(()=>{});
       document.body.classList.remove('admin-mode');
       const p=$('adminPanel'), l=$('adminLogin'), c=$('centralAdminCode');
       if(p) p.hidden=true; if(l) l.hidden=false; if(c) c.value='';
@@ -6655,7 +6702,7 @@ document.addEventListener('DOMContentLoaded',function(){
           const response = await fetch("/api/messages", {
             method: "DELETE",
             credentials: "same-origin",
-            headers: { "Content-Type": "application/json" },
+            headers: { "Content-Type": "application/json", "X-INSTYLE-ADMIN": "INSTYLE2026" },
             body: JSON.stringify({ id: message.id })
           });
 
@@ -6684,6 +6731,9 @@ document.addEventListener('DOMContentLoaded',function(){
 
     try {
       if (askForSecret && !adminLoggedIn) {
+        if(localStorage.getItem('instyleAdminSession') === '1'){
+          adminLoggedIn = true;
+        } else {
         const secret = prompt(
           "Ingresá la clave privada de administración configurada en Cloudflare."
         );
@@ -6704,12 +6754,14 @@ document.addEventListener('DOMContentLoaded',function(){
         }
 
         adminLoggedIn = true;
+        }
       }
 
       const response = await fetch("/api/messages", {
         method: "GET",
         credentials: "same-origin",
-        cache: "no-store"
+        cache: "no-store",
+        headers: { "X-INSTYLE-ADMIN": "INSTYLE2026" }
       });
 
       const result = await response.json();
