@@ -5911,15 +5911,34 @@ document.addEventListener('DOMContentLoaded',function(){
   const escapeHtml=v=>String(v??'').replace(/[&<>"']/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
   const defaultHome={heroImage:'',aboutImage:'',aboutText:'Nacido el 8 de febrero de 2001, Yang Jeong-in, conocido artísticamente como I.N, es miembro de Stray Kids.\n\nDentro del grupo se desempeña como vocalista y maknae, debutando oficialmente el 25 de marzo de 2018, a los 17 años.',bottegaImage:'',bottegaText:'Información sobre la relación de I.N con Bottega Veneta y sus apariciones vinculadas a la firma.',bottegaUrl:'',damianiImage:'',damianiText:'Información sobre la relación de I.N con Damiani y sus apariciones vinculadas a la firma.',damianiUrl:'',socials:{instagram:'',tiktok:'',x:'',youtube:'',threads:''},signature:'I.N Argentina',collaborators:''};
   const defaultContact={title:'CONTÁCTANOS',text:'Si querés comunicarte con FAN - I.N, podés hacerlo a través de los siguientes medios.',links:[]};
-  const getStored=(key,def)=>{try{const v=JSON.parse(localStorage.getItem(key)||'null');return v?{...def,...v}:def}catch(e){return def}};
-  let home={...defaultHome,socials:{...defaultHome.socials,...getStored(HOME_KEY,defaultHome).socials}};
-  Object.assign(home,getStored(HOME_KEY,defaultHome));
+  function getStored(key,def){
+    try{
+      const raw=localStorage.getItem(key);
+      if(!raw)return {...def};
+      const value=JSON.parse(raw);
+      if(!value||typeof value!=='object'||Array.isArray(value))return {...def};
+      return {...def,...value};
+    }catch(e){return {...def};}
+  }
+  function normalizeHome(value){
+    const src=value&&typeof value==='object'&&!Array.isArray(value)?value:{};
+    return {
+      ...defaultHome,
+      ...src,
+      socials:{...defaultHome.socials,...(src.socials&&typeof src.socials==='object'?src.socials:{})}
+    };
+  }
+  let home=normalizeHome(getStored(HOME_KEY,defaultHome));
 
   const homeUploadPromises=new Set();
   function absoluteSiteUrl(url){
     const raw=String(url||'').trim();
     if(!raw)return '';
-    try{return new URL(raw,window.location.origin).href;}catch(e){return raw;}
+    try{
+      const resolved=new URL(raw,window.location.origin);
+      if(resolved.protocol!=='http:'&&resolved.protocol!=='https:')return '';
+      return resolved.href;
+    }catch(e){return '';}
   }
   async function fileToData(file,key,preview){
     if(!file)return;
@@ -5983,7 +6002,7 @@ document.addEventListener('DOMContentLoaded',function(){
     brand('bottega','homeBottegaPhoto','homeBottegaText','homeBottegaLink');
     brand('damiani','homeDamianiPhoto','homeDamianiText','homeDamianiLink');
     SOCIALS.forEach(k=>{const a=document.querySelector('[data-social="'+k+'"]');if(!a)return;const u=safeHttp(home.socials[k]);a.hidden=!u;a.href=u;});
-    const sig=byId('siteSignatureMain');if(sig)sig.textContent='Hecho por '+(home.signature||'I.N Argentina')+' para Fans';
+    const sig=byId('siteSignatureMain');if(sig)sig.textContent='Hecho por I.N Argentina para Fans';
     const col=byId('siteSignatureCollaborators');if(col){const text=String(home.collaborators||'').trim();col.hidden=!text;col.textContent=text;}
   }
   function loadHomeForm(){
@@ -6016,12 +6035,26 @@ document.addEventListener('DOMContentLoaded',function(){
     home.aboutImage=absoluteSiteUrl(home.aboutImage);
     home.bottegaImage=absoluteSiteUrl(home.bottegaImage);
     home.damianiImage=absoluteSiteUrl(home.damianiImage);
-    localStorage.setItem(HOME_KEY,JSON.stringify(home));
+    const savedHome=normalizeHome(home);
+    home=savedHome;
+    const serialized=JSON.stringify(savedHome);
+    localStorage.setItem(HOME_KEY,serialized);
     applyHome();
-    if(window.instyleCloudSync&&typeof window.instyleCloudSync.pushAll==='function'){
-      const ok=await window.instyleCloudSync.pushAll().catch(()=>false);
-      if(message){message.style.color='#315d39';message.textContent=ok?'✓ Cambios de Inicio guardados y sincronizados.':'✓ Cambios de Inicio guardados.';}
-    }else if(message){message.style.color='#315d39';message.textContent='✓ Cambios de Inicio guardados.';}
+
+    // Guardado directo del bloque de INICIO para evitar que otro POST
+    // retrasado del sincronizador general pueda pisar los cambios recién hechos.
+    try{
+      const response=await fetch('/api/state',{
+        method:'POST',
+        credentials:'same-origin',
+        headers:{'Content-Type':'application/json','X-INSTYLE-ADMIN':ADMIN_CODE},
+        body:JSON.stringify({key:HOME_KEY,value:serialized})
+      });
+      if(!response.ok)throw new Error('No se pudo sincronizar el Inicio.');
+      if(message){message.style.color='#315d39';message.textContent='✓ Cambios de Inicio guardados, aplicados y sincronizados.';}
+    }catch(error){
+      if(message){message.style.color='#8a2929';message.textContent='✓ Cambios guardados en este dispositivo, pero no se pudieron sincronizar todavía.';}
+    }
   }
   const SITE_TEXTS_KEY='instyleSiteTextsV1';
   const SITE_TEXT_IDS=['textHomeHeroQuote','textHomeAboutTitle','textHomeAboutLabel','textHomeLuxuryLabel','textHomeLuxuryTitle','textHomeLuxuryIntro','textHomeFollowLabel','textHomeFollowTitle','textTraceLabel','textTraceTitle','textTraceInstagram','textTracePromotion','textTraceGenerator','textTraceImpact','textInstagramIntro','textPromotionIntro','textGeneratorIntro','textMivIntro','textVotingIntro','textStreamingIntro','textTutorialIntro','textFangroupsIntro'];
@@ -6146,7 +6179,7 @@ document.addEventListener('DOMContentLoaded',function(){
   window.addEventListener('instyle:cloud-updated',function(){
     try{
       const stored=getStored(HOME_KEY,defaultHome);
-      home={...defaultHome,...stored,socials:{...defaultHome.socials,...(stored.socials||{})}};
+      home=normalizeHome(stored);
       applyHome();
       applySiteTexts();
       renderContact();
