@@ -1,103 +1,168 @@
 export default {
   async fetch(request, env, ctx) {
     const url = new URL(request.url);
-
-    // =========================
-    // FUNCIONES GENERALES
-    // =========================
-
-    const json = (data, status = 200, extraHeaders = {}) =>
+    const json = (data, status = 200, headers = {}) =>
       new Response(JSON.stringify(data), {
         status,
         headers: {
           "content-type": "application/json; charset=UTF-8",
-          ...extraHeaders
+          ...headers
         }
       });
 
-    const clean = (value) =>
-      String(value ?? "").trim();
-
-    const sanitizeFileName = (name) =>
-      clean(name)
+    const clean = v => String(v ?? "").trim();
+    const safeName = v =>
+      clean(v)
         .replace(/[^\w.\- áéíóúÁÉÍÓÚñÑ()]/g, "_")
         .replace(/\s+/g, "_")
         .slice(0, 150) || "archivo";
 
-    const ADMIN_CODE = "INSTYLE2026";
+    const cookieName = "bbang_admin";
 
-    function isAdmin(request, env) {
-      const headerCode =
-        request.headers.get("X-INSTYLE-ADMIN") || "";
-
-      if (headerCode === ADMIN_CODE) {
-        return true;
-      }
-
-      const cookie =
-        request.headers.get("Cookie") || "";
-
-      const match =
-        cookie.match(/instyle_admin=([^;]+)/);
-
-      if (match && match[1] === "1") {
-        return true;
-      }
-
-      return false;
+    function b64url(bytes) {
+      let s = "";
+      for (const b of bytes) s += String.fromCharCode(b);
+      return btoa(s)
+        .replace(/\+/g, "-")
+        .replace(/\//g, "_")
+        .replace(/=+$/g, "");
     }
 
-    // =========================
-    // LOGIN ADMIN
-    // =========================
+    async function signature(expiry, secret) {
+      const key = await crypto.subtle.importKey(
+        "raw",
+        new TextEncoder().encode(secret),
+        { name: "HMAC", hash: "SHA-256" },
+        false,
+        ["sign"]
+      );
+
+      return b64url(
+        new Uint8Array(
+          await crypto.subtle.sign(
+            "HMAC",
+            key,
+            new TextEncoder().encode(String(expiry))
+          )
+        )
+      );
+    }
+
+    async function isAdmin(req) {
+      const secret = clean(env.INSTYLE_ADMIN_SECRET);
+      if (!secret) return false;
+
+      const match = (req.headers.get("Cookie") || "")
+        .match(/(?:^|;\s*)bbang_admin=([^;]+)/);
+
+      if (!match) return false;
+
+      const parts = match[1].split(".");
+      const expiry = Number(parts[0]);
+
+      if (
+        parts.length !== 2 ||
+        !Number.isSafeInteger(expiry) ||
+        expiry <= Math.floor(Date.now() / 1000)
+      ) {
+        return false;
+      }
+
+      try {
+        return parts[1] === await signature(expiry, secret);
+      } catch {
+        return false;
+      }
+    }
+
+    async function deleteAttachments(row) {
+      let files = [];
+
+      try {
+        const parsed = JSON.parse(row?.attachment_name || "[]");
+        if (Array.isArray(parsed)) files = parsed;
+      } catch {}
+
+      for (const file of files) {
+        if (file?.key) {
+          try {
+            await env.MESSAGE_FILES?.delete(file.key);
+          } catch {}
+        }
+      }
+    }
+
+    async function cleanupOldMessages() {
+      const cutoff = new Date(
+        Date.now() - 7 * 86400000
+      ).toISOString();
+
+      const result = await env.DB
+        .prepare(
+          "SELECT id, attachment_name FROM messages WHERE created_at < ?"
+        )
+        .bind(cutoff)
+        .all();
+
+      let deleted = 0;
+
+      for (const row of result.results || []) {
+        await deleteAttachments(row);
+
+        await env.DB
+          .prepare("DELETE FROM messages WHERE id = ?")
+          .bind(row.id)
+          .run();
+
+        deleted++;
+      }
+
+      return deleted;
+    }
+
+    // ACCESO DE ADMINISTRADOR
 
     if (url.pathname === "/api/admin-login") {
       if (request.method !== "POST") {
-        return json(
-          { message: "Método no permitido." },
-          405
-        );
+        return json({ message: "Método no permitido." }, 405);
       }
 
       try {
         const body = await request.json();
-        const code = clean(body?.code);
+        const secret = clean(env.INSTYLE_ADMIN_SECRET);
 
-        const configuredSecret =
-          env.INSTYLE_ADMIN_SECRET
-            ? String(env.INSTYLE_ADMIN_SECRET)
-            : "";
-
-        const valid =
-          code === ADMIN_CODE ||
-          (configuredSecret && code === configuredSecret);
-
-        if (!valid) {
+        if (!secret || clean(body?.code) !== secret) {
           return json(
             { ok: false, message: "Clave incorrecta." },
             401
           );
         }
 
+        const expiry = Math.floor(Date.now() / 1000) + 86400;
+        const sig = await signature(expiry, secret);
+
         return json(
           { ok: true },
           200,
           {
             "Set-Cookie":
-              "instyle_admin=1; Path=/; HttpOnly; Secure; SameSite=Lax; Max-Age=86400"
+              `${cookieName}=${expiry}.${sig}; Path=/; HttpOnly; Secure; SameSite=Strict; Max-Age=86400`
           }
         );
-      } catch (error) {
-        return json(
-          { message: "Solicitud inválida." },
-          400
-        );
+      } catch (e) {
+        console.error("ERROR /api/admin-login", e);
+        return json({ message: "Solicitud inválida." }, 400);
       }
     }
 
-    // =========================
-    // LOGOUT ADMIN
-    // =========================
+    if (url.pathname === "/api/admin-status") {
+      if (request.method !== "GET") {
+        return json({ message: "Método no permitido." }, 405);
+      }
+
+      const ok = await isAdmin(request);
+      return json({ ok }, ok ? 200 : 401);
+    }
 
     if (url.pathname === "/api/admin-logout") {
       return json(
@@ -105,24 +170,18 @@ export default {
         200,
         {
           "Set-Cookie":
-            "instyle_admin=; Path=/; HttpOnly; Secure; SameSite=Lax; Max-Age=0"
+            `${cookieName}=; Path=/; HttpOnly; Secure; SameSite=Strict; Max-Age=0`
         }
       );
     }
 
-    // =========================
-    // ESTADO DEL SITIO — D1
-    // =========================
+    // ESTADO Y CONTENIDO EDITABLE DEL SITIO
 
     if (url.pathname === "/api/state") {
-
       if (request.method === "GET") {
         try {
           const rows = await env.DB
-            .prepare(`
-              SELECT key, value
-              FROM site_state
-            `)
+            .prepare("SELECT key, value FROM site_state")
             .all();
 
           const state = {};
@@ -131,154 +190,94 @@ export default {
             state[row.key] = row.value;
           }
 
-          return json({
-            ok: true,
-            state
-          });
-        } catch (error) {
+          return json({ ok: true, state });
+        } catch (e) {
+          console.error("ERROR /api/state GET", e);
           return json(
-            {
-              message:
-                "No se pudo cargar el estado del sitio."
-            },
+            { message: "No se pudo cargar el estado del sitio." },
             500
           );
         }
       }
 
-      if (request.method === "POST") {
+      if (request.method !== "POST") {
+        return json({ message: "Método no permitido." }, 405);
+      }
 
-        if (!isAdmin(request, env)) {
-          return json(
-            { message: "No autorizado." },
-            401
-          );
+      if (!(await isAdmin(request))) {
+        return json({ message: "No autorizado." }, 401);
+      }
+
+      try {
+        const body = await request.json();
+
+        if (
+          body?.state &&
+          typeof body.state === "object" &&
+          !Array.isArray(body.state)
+        ) {
+          const entries = Object.entries(body.state);
+
+          for (const [key, value] of entries) {
+            if (!key) continue;
+
+            await env.DB
+              .prepare(`
+                INSERT INTO site_state (key, value)
+                VALUES (?, ?)
+                ON CONFLICT(key)
+                DO UPDATE SET value = excluded.value
+              `)
+              .bind(key, value == null ? null : String(value))
+              .run();
+          }
+
+          return json({ ok: true, saved: entries.length });
         }
 
-        try {
-          const body = await request.json();
+        const key = clean(body?.key);
+        const value = body?.value ?? null;
 
-          const state =
-            body &&
-            body.state &&
-            typeof body.state === "object"
-              ? body.state
-              : null;
-
-          const key =
-            clean(body?.key);
-
-          const value =
-            body?.value ?? null;
-
-          if (state) {
-            const entries =
-              Object.entries(state);
-
-            for (const [stateKey, stateValue] of entries) {
-
-              if (!stateKey) continue;
-
-              await env.DB
-                .prepare(`
-                  INSERT INTO site_state (key, value)
-                  VALUES (?, ?)
-                  ON CONFLICT(key)
-                  DO UPDATE SET value = excluded.value
-                `)
-                .bind(
-                  stateKey,
-                  stateValue == null
-                    ? null
-                    : String(stateValue)
-                )
-                .run();
-            }
-
-            return json({
-              ok: true,
-              saved: entries.length
-            });
-          }
-
-          if (key) {
-
-            if (value === null) {
-              await env.DB
-                .prepare(`
-                  DELETE FROM site_state
-                  WHERE key = ?
-                `)
-                .bind(key)
-                .run();
-            } else {
-              await env.DB
-                .prepare(`
-                  INSERT INTO site_state (key, value)
-                  VALUES (?, ?)
-                  ON CONFLICT(key)
-                  DO UPDATE SET value = excluded.value
-                `)
-                .bind(
-                  key,
-                  String(value)
-                )
-                .run();
-            }
-
-            return json({
-              ok: true,
-              key
-            });
-          }
-
+        if (!key) {
           return json(
-            {
-              message:
-                "No se recibió ningún estado para guardar."
-            },
+            { message: "No se recibió ningún estado para guardar." },
             400
           );
-
-        } catch (error) {
-          return json(
-            {
-              message:
-                "No se pudo guardar el estado."
-            },
-            500
-          );
         }
-      }
 
-      return json(
-        { message: "Método no permitido." },
-        405
-      );
+        if (value === null) {
+          await env.DB
+            .prepare("DELETE FROM site_state WHERE key = ?")
+            .bind(key)
+            .run();
+        } else {
+          await env.DB
+            .prepare(`
+              INSERT INTO site_state (key, value)
+              VALUES (?, ?)
+              ON CONFLICT(key)
+              DO UPDATE SET value = excluded.value
+            `)
+            .bind(key, String(value))
+            .run();
+        }
+
+        return json({ ok: true, key });
+      } catch (e) {
+        console.error("ERROR /api/state POST", e);
+        return json(
+          { message: "No se pudo guardar el estado." },
+          500
+        );
+      }
     }
 
-    // =========================
     // ARCHIVOS DEL SITIO
-    // =========================
-    //
-    // IMPORTANTE:
-    // MESSAGE_FILES = KV
-    // NO R2
-    // =========================
 
     if (url.pathname === "/api/site-file") {
-
-      // -------------------------
-      // SUBIR IMAGEN / ARCHIVO
-      // -------------------------
-
       if (request.method === "POST") {
-
-        if (!isAdmin(request, env)) {
-          return json(
-            { message: "No autorizado." },
-            401
-          );
+        if (!(await isAdmin(request))) {
+          return json({ message: "No autorizado." }, 401);
         }
 
         if (!env.MESSAGE_FILES) {
@@ -292,42 +291,22 @@ export default {
         }
 
         try {
+          const form = await request.formData();
+          const file = form.get("file");
+          const prefix = clean(form.get("prefix") || "site");
 
-          const form =
-            await request.formData();
+          if (!file || typeof file.arrayBuffer !== "function") {
+            return json({ message: "No se recibió ningún archivo." }, 400);
+          }
 
-          const file =
-            form.get("file");
-
-          const prefix =
-            clean(form.get("prefix") || "site");
-
-          if (
-            !file ||
-            typeof file !== "object" ||
-            typeof file.arrayBuffer !== "function"
-          ) {
+          if (file.size > 8 * 1024 * 1024) {
             return json(
-              {
-                message:
-                  "No se recibió ningún archivo."
-              },
+              { message: "El archivo es demasiado pesado. Máximo 8 MB." },
               400
             );
           }
 
-          const maxBytes =
-            8 * 1024 * 1024;
-
-          if (file.size > maxBytes) {
-            return json(
-              {
-                message:
-                  "El archivo es demasiado pesado. Máximo 8 MB."
-              },
-              400
-            );
-          }
+          const type = clean(file.type) || "application/octet-stream";
 
           const allowedTypes = [
             "image/jpeg",
@@ -339,448 +318,218 @@ export default {
             "text/plain"
           ];
 
-          const type =
-            clean(file.type) ||
-            "application/octet-stream";
-
           if (!allowedTypes.includes(type)) {
-            return json(
-              {
-                message:
-                  "Tipo de archivo no permitido."
-              },
-              400
-            );
+            return json({ message: "Tipo de archivo no permitido." }, 400);
           }
 
           const safePrefix =
-            prefix
-              .replace(/[^\w\-]/g, "_")
-              .slice(0, 50) ||
-            "site";
+            prefix.replace(/[^\w-]/g, "_").slice(0, 50) || "site";
 
-          const safeName =
-            sanitizeFileName(
-              file.name || "archivo"
-            );
-
-          const randomPart =
-            crypto.randomUUID();
+          const name = safeName(file.name || "archivo");
 
           const key =
-            `site/${safePrefix}/${Date.now()}-${randomPart}-${safeName}`;
+            `site/${safePrefix}/${Date.now()}-${crypto.randomUUID()}-${name}`;
 
-          // KV:
-          // guardamos el archivo junto con su
-          // Content-Type como metadata.
           await env.MESSAGE_FILES.put(
             key,
             await file.arrayBuffer(),
             {
               metadata: {
                 contentType: type,
-                originalName: safeName
+                originalName: name
               }
             }
           );
 
-          const fileUrl =
-            new URL(
-              "/api/site-file?key=" +
-                encodeURIComponent(key),
-              request.url
-            ).href;
-
           return json({
             ok: true,
             key,
-            url: fileUrl
+            url: new URL(
+              "/api/site-file?key=" + encodeURIComponent(key),
+              request.url
+            ).href
           });
-
-        } catch (error) {
-
-          console.error(
-            "ERROR /api/site-file POST:",
-            error
-          );
-
+        } catch (e) {
+          console.error("ERROR /api/site-file POST", e);
           return json(
-            {
-              message:
-                "No se pudo guardar el archivo."
-            },
+            { message: "No se pudo guardar el archivo." },
             500
           );
         }
       }
 
-      // -------------------------
-      // MOSTRAR IMAGEN / ARCHIVO
-      // -------------------------
-
       if (request.method === "GET") {
-
         try {
+          const key = clean(url.searchParams.get("key"));
 
-          const key =
-            clean(
-              url.searchParams.get("key")
-            );
-
-          if (!key) {
-            return new Response(
-              "Archivo inválido.",
-              { status: 400 }
-            );
-          }
-
-          // Seguridad:
-          // solamente permitimos archivos
-          // pertenecientes al sitio.
           if (!key.startsWith("site/")) {
-            return new Response(
-              "Archivo inválido.",
-              { status: 400 }
-            );
+            return new Response("Archivo inválido.", { status: 400 });
           }
 
-          const result =
-            await env.MESSAGE_FILES.getWithMetadata(
-              key,
-              {
-                type: "arrayBuffer"
-              }
-            );
+          const result = await env.MESSAGE_FILES.getWithMetadata(
+            key,
+            { type: "arrayBuffer" }
+          );
 
-          if (
-            !result ||
-            result.value === null
-          ) {
-            return new Response(
-              "Archivo no encontrado.",
-              { status: 404 }
-            );
+          if (!result || result.value === null) {
+            return new Response("Archivo no encontrado.", { status: 404 });
           }
 
-          const metadata =
-            result.metadata || {};
-
-          const contentType =
-            metadata.contentType ||
-            "application/octet-stream";
-
-          const headers =
-            new Headers();
-
-          headers.set(
-            "Content-Type",
-            String(contentType)
-          );
-
-          headers.set(
-            "Cache-Control",
-            "public, max-age=31536000"
-          );
-
-          headers.set(
-            "Content-Disposition",
-            "inline"
-          );
-
-          return new Response(
-            result.value,
-            {
-              status: 200,
-              headers
+          return new Response(result.value, {
+            headers: {
+              "Content-Type":
+                result.metadata?.contentType || "application/octet-stream",
+              "Cache-Control": "public, max-age=31536000",
+              "Content-Disposition": "inline"
             }
-          );
-
-        } catch (error) {
-
-          console.error(
-            "ERROR /api/site-file GET:",
-            error
-          );
-
-          return new Response(
-            "No se pudo abrir el archivo.",
-            { status: 500 }
-          );
+          });
+        } catch (e) {
+          console.error("ERROR /api/site-file GET", e);
+          return new Response("No se pudo abrir el archivo.", { status: 500 });
         }
       }
 
-      return json(
-        { message: "Método no permitido." },
-        405
-      );
+      return json({ message: "Método no permitido." }, 405);
     }
 
-    // =========================
-    // DESCARGAR ARCHIVO DE MENSAJE
-    // =========================
+    // DESCARGA DE ARCHIVOS ADJUNTOS A LOS MENSAJES
 
     if (url.pathname === "/api/message-file") {
-
       if (request.method !== "GET") {
-        return json(
-          { message: "Método no permitido." },
-          405
-        );
+        return json({ message: "Método no permitido." }, 405);
       }
 
-      if (!isAdmin(request, env)) {
-        return json(
-          { message: "No autorizado." },
-          401
-        );
+      if (!(await isAdmin(request))) {
+        return json({ message: "No autorizado." }, 401);
       }
 
       try {
-
-        const messageId =
-          Number(
-            url.searchParams.get("message")
-          );
-
-        const fileIndex =
-          Number(
-            url.searchParams.get("file")
-          );
+        const id = Number(url.searchParams.get("message"));
+        const index = Number(url.searchParams.get("file"));
 
         if (
-          !Number.isInteger(messageId) ||
-          messageId <= 0 ||
-          !Number.isInteger(fileIndex) ||
-          fileIndex < 0
+          !Number.isInteger(id) ||
+          id <= 0 ||
+          !Number.isInteger(index) ||
+          index < 0
         ) {
-          return json(
-            { message: "Archivo inválido." },
-            400
-          );
+          return json({ message: "Archivo inválido." }, 400);
         }
 
-        const row =
-          await env.DB
-            .prepare(`
-              SELECT attachment_name
-              FROM messages
-              WHERE id = ?
-            `)
-            .bind(messageId)
-            .first();
+        const row = await env.DB
+          .prepare("SELECT attachment_name FROM messages WHERE id = ?")
+          .bind(id)
+          .first();
 
         if (!row) {
-          return json(
-            {
-              message:
-                "Mensaje no encontrado."
-            },
-            404
-          );
+          return json({ message: "Mensaje no encontrado." }, 404);
         }
 
         let files = [];
 
         try {
-          const parsed =
-            JSON.parse(
-              row.attachment_name || "[]"
-            );
+          const parsed = JSON.parse(row.attachment_name || "[]");
+          if (Array.isArray(parsed)) files = parsed;
+        } catch {}
 
-          files =
-            Array.isArray(parsed)
-              ? parsed
-              : [];
-        } catch (error) {
-          files = [];
+        const file = files[index];
+
+        if (!file?.key) {
+          return json({ message: "Archivo no encontrado." }, 404);
         }
 
-        const file =
-          files[fileIndex];
+        const data = await env.MESSAGE_FILES.get(
+          file.key,
+          { type: "arrayBuffer" }
+        );
 
-        if (!file || !file.key) {
+        if (!data) {
           return json(
-            {
-              message:
-                "Archivo no encontrado."
-            },
+            { message: "El archivo ya no está disponible." },
             404
           );
         }
 
-        const storedFile =
-          await env.MESSAGE_FILES.get(
-            file.key,
-            {
-              type: "arrayBuffer"
-            }
-          );
-
-        if (!storedFile) {
-          return json(
-            {
-              message:
-                "El archivo ya no está disponible."
-            },
-            404
-          );
-        }
-
-        const safeName =
-          sanitizeFileName(
-            file.name || "archivo"
-          );
-
-        return new Response(
-          storedFile,
-          {
-            status: 200,
-            headers: {
-              "Content-Type":
-                file.type ||
-                "application/octet-stream",
-
-              "Content-Length":
-                String(
-                  file.size ||
-                  storedFile.byteLength
-                ),
-
-              "Content-Disposition":
-                `attachment; filename="${safeName}"`,
-
-              "Cache-Control":
-                "private, no-store"
-            }
+        return new Response(data, {
+          headers: {
+            "Content-Type": file.type || "application/octet-stream",
+            "Content-Length": String(file.size || data.byteLength),
+            "Content-Disposition":
+              `attachment; filename="${safeName(file.name || "archivo")}"`,
+            "Cache-Control": "private, no-store"
           }
-        );
-
-      } catch (error) {
-
-        console.error(
-          "ERROR /api/message-file:",
-          error
-        );
-
+        });
+      } catch (e) {
+        console.error("ERROR /api/message-file", e);
         return json(
-          {
-            message:
-              "No se pudo abrir el archivo."
-          },
+          { message: "No se pudo abrir el archivo." },
           500
         );
       }
     }
 
-    // =========================
-    // MENSAJES
-    // =========================
+    // MENSAJES DE LOS VISITANTES
 
     if (url.pathname === "/api/messages") {
-
-      // -------------------------
-      // RECIBIR MENSAJE
-      // -------------------------
-
       if (request.method === "POST") {
+        const savedKeys = [];
 
         try {
+          const form = await request.formData();
 
-          const form =
-            await request.formData();
+          const category = clean(
+            form.get("category") ||
+            form.get("motivo") ||
+            form.get("categoria") ||
+            form.get("reason")
+          );
 
-          const category =
-            clean(
-              form.get("category") ||
-              form.get("motivo") ||
-              form.get("categoria") ||
-              form.get("reason")
-            );
+          const name = clean(
+            form.get("name") || form.get("nombre")
+          );
 
-          const name =
-            clean(
-              form.get("name") ||
-              form.get("nombre")
-            );
+          const email = clean(
+            form.get("email") || form.get("correo")
+          );
 
-          const email =
-            clean(
-              form.get("email") ||
-              form.get("correo")
-            );
+          const description = clean(
+            form.get("description") ||
+            form.get("descripcion") ||
+            form.get("mensaje")
+          );
 
-          const description =
-            clean(
-              form.get("description") ||
-              form.get("descripcion") ||
-              form.get("mensaje")
-            );
-
-          const honeypot =
-            clean(
-              form.get("website")
-            );
-
-          if (honeypot) {
+          if (clean(form.get("website"))) {
             return json({ ok: true });
           }
 
           if (!category) {
-            return json(
-              {
-                message:
-                  "Seleccioná una categoría."
-              },
-              400
-            );
+            return json({ message: "Seleccioná una categoría." }, 400);
           }
 
           if (!description) {
+            return json({ message: "Escribí el mensaje." }, 400);
+          }
+
+          if (email && !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email)) {
             return json(
-              {
-                message:
-                  "Escribí el mensaje."
-              },
+              { message: "El correo electrónico no es válido." },
               400
             );
           }
 
-          if (
-            email &&
-            !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email)
-          ) {
-            return json(
-              {
-                message:
-                  "El correo electrónico no es válido."
-              },
-              400
-            );
-          }
-
-          const messageId =
-            Date.now();
-
+          const id = Date.now();
           const attachments = [];
 
-          for (const item of form.getAll("files")) {
-
+          for (const file of form.getAll("files")) {
             if (
-              !item ||
-              typeof item !== "object" ||
-              typeof item.arrayBuffer !== "function"
+              !file ||
+              typeof file.arrayBuffer !== "function" ||
+              !file.size
             ) {
               continue;
             }
 
-            if (!item.size) {
-              continue;
-            }
-
-            const maxBytes =
-              8 * 1024 * 1024;
-
-            if (item.size > maxBytes) {
+            if (file.size > 8 * 1024 * 1024) {
               return json(
                 {
                   message:
@@ -790,41 +539,36 @@ export default {
               );
             }
 
-            const type =
-              clean(item.type) ||
-              "application/octet-stream";
-
-            const safeName =
-              sanitizeFileName(
-                item.name || "archivo"
-              );
+            const type = clean(file.type) || "application/octet-stream";
+            const filename = safeName(file.name || "archivo");
 
             const key =
-              `messages/${messageId}/${Date.now()}-${crypto.randomUUID()}-${safeName}`;
+              `messages/${id}/${Date.now()}-${crypto.randomUUID()}-${filename}`;
 
             await env.MESSAGE_FILES.put(
               key,
-              await item.arrayBuffer(),
+              await file.arrayBuffer(),
               {
                 metadata: {
                   contentType: type,
-                  originalName: safeName
+                  originalName: filename
                 }
               }
             );
 
+            savedKeys.push(key);
+
             attachments.push({
-              name: safeName,
+              name: filename,
               type,
-              size: item.size,
+              size: file.size,
               key
             });
           }
 
           await env.DB
             .prepare(`
-              INSERT INTO messages
-              (
+              INSERT INTO messages (
                 id,
                 category,
                 name,
@@ -838,441 +582,195 @@ export default {
               VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
             `)
             .bind(
-              messageId,
+              id,
               category,
               name,
               email,
               description,
               JSON.stringify(attachments),
-              attachments.length
-                ? attachments[0].type
-                : null,
-              attachments.length
-                ? attachments[0].size
-                : null,
+              attachments[0]?.type || null,
+              attachments[0]?.size || null,
               new Date().toISOString()
             )
             .run();
 
-          return json({
-            ok: true,
-            id: messageId
-          });
+          return json({ ok: true, id });
+        } catch (e) {
+          for (const key of savedKeys) {
+            try {
+              await env.MESSAGE_FILES?.delete(key);
+            } catch {}
+          }
 
-        } catch (error) {
-
-          console.error(
-            "ERROR /api/messages POST:",
-            error
-          );
+          console.error("ERROR /api/messages POST", e);
 
           return json(
-            {
-              message:
-                "No se pudo enviar el mensaje."
-            },
+            { message: "No se pudo enviar el mensaje." },
             500
           );
         }
       }
-
-      // -------------------------
-      // CONSULTAR MENSAJES
-      // -------------------------
 
       if (request.method === "GET") {
-
-        if (!isAdmin(request, env)) {
-          return json(
-            { message: "No autorizado." },
-            401
-          );
+        if (!(await isAdmin(request))) {
+          return json({ message: "No autorizado." }, 401);
         }
 
         try {
-
-          const rows =
-            await env.DB
-              .prepare(`
-                SELECT
-                  id,
-                  category,
-                  name,
-                  email,
-                  description,
-                  attachment_name,
-                  attachment_type,
-                  attachment_size,
-                  created_at
-                FROM messages
-                ORDER BY created_at DESC
-              `)
-              .all();
-
-          const messages =
-            (rows.results || []).map(
-              row => {
-
-                let attachments = [];
-
-                try {
-                  const parsed =
-                    JSON.parse(
-                      row.attachment_name || "[]"
-                    );
-
-                  attachments =
-                    Array.isArray(parsed)
-                      ? parsed
-                      : [];
-                } catch (error) {
-                  attachments = [];
-                }
-
-                return {
-                  ...row,
-                  attachments
-                };
-              }
-            );
-
-          return json({
-            messages
-          });
-
-        } catch (error) {
-
-          console.error(
-            "ERROR /api/messages GET:",
-            error
-          );
-
-          return json(
-            {
-              message:
-                "No se pudieron cargar los mensajes."
-            },
-            500
-          );
-        }
-      }
-
-      // -------------------------
-      // ELIMINAR MENSAJE
-      // -------------------------
-
-      if (request.method === "DELETE") {
-
-        if (!isAdmin(request, env)) {
-          return json(
-            { message: "No autorizado." },
-            401
-          );
-        }
-
-        try {
-
-          const body =
-            await request.json();
-
-          const id =
-            Number(body.id);
-
-          if (
-            !Number.isInteger(id) ||
-            id <= 0
-          ) {
-            return json(
-              {
-                message:
-                  "ID de mensaje inválido."
-              },
-              400
-            );
-          }
-
-          const row =
-            await env.DB
-              .prepare(`
-                SELECT attachment_name
-                FROM messages
-                WHERE id = ?
-              `)
-              .bind(id)
-              .first();
-
-          if (row) {
-
-            let files = [];
-
-            try {
-              const parsed =
-                JSON.parse(
-                  row.attachment_name || "[]"
-                );
-
-              files =
-                Array.isArray(parsed)
-                  ? parsed
-                  : [];
-            } catch (error) {
-              files = [];
-            }
-
-            for (const file of files) {
-
-              if (!file?.key) {
-                continue;
-              }
-
-              try {
-                await env.MESSAGE_FILES.delete(
-                  file.key
-                );
-              } catch (error) {}
-            }
-          }
-
-          await env.DB
-            .prepare(
-              "DELETE FROM messages WHERE id = ?"
-            )
-            .bind(id)
-            .run();
-
-          return json({
-            ok: true
-          });
-
-        } catch (error) {
-
-          console.error(
-            "ERROR /api/messages DELETE:",
-            error
-          );
-
-          return json(
-            {
-              message:
-                "No se pudo eliminar el mensaje."
-            },
-            500
-          );
-        }
-      }
-
-      return json(
-        {
-          message:
-            "Método no permitido."
-        },
-        405
-      );
-    }
-
-    // =========================
-    // LIMPIEZA DE MENSAJES
-    // =========================
-
-    if (
-      url.pathname === "/api/cleanup-messages"
-    ) {
-
-      if (!isAdmin(request, env)) {
-        return json(
-          { message: "No autorizado." },
-          401
-        );
-      }
-
-      try {
-
-        const cutoff =
-          new Date(
-            Date.now() -
-              7 * 24 * 60 * 60 * 1000
-          ).toISOString();
-
-        const rows =
-          await env.DB
+          const rows = await env.DB
             .prepare(`
               SELECT
                 id,
-                attachment_name
+                category,
+                name,
+                email,
+                description,
+                attachment_name,
+                attachment_type,
+                attachment_size,
+                created_at
               FROM messages
-              WHERE created_at < ?
+              ORDER BY created_at DESC
             `)
-            .bind(cutoff)
             .all();
 
-        let deleted =
-          0;
-
-        for (
-          const row
-          of rows.results || []
-        ) {
-
-          let files = [];
-
-          try {
-            const parsed =
-              JSON.parse(
-                row.attachment_name || "[]"
-              );
-
-            files =
-              Array.isArray(parsed)
-                ? parsed
-                : [];
-          } catch (error) {
-            files = [];
-          }
-
-          for (const file of files) {
-
-            if (!file?.key) {
-              continue;
-            }
+          const messages = (rows.results || []).map(row => {
+            let attachments = [];
 
             try {
-              await env.MESSAGE_FILES.delete(
-                file.key
-              );
-            } catch (error) {}
-          }
+              const parsed = JSON.parse(row.attachment_name || "[]");
+              if (Array.isArray(parsed)) attachments = parsed;
+            } catch {}
 
-          await env.DB
-            .prepare(
-              "DELETE FROM messages WHERE id = ?"
-            )
-            .bind(row.id)
-            .run();
+            return { ...row, attachments };
+          });
 
-          deleted++;
+          return json({ messages });
+        } catch (e) {
+          console.error("ERROR /api/messages GET", e);
+
+          return json(
+            { message: "No se pudieron cargar los mensajes." },
+            500
+          );
+        }
+      }
+
+      if (request.method === "DELETE") {
+        if (!(await isAdmin(request))) {
+          return json({ message: "No autorizado." }, 401);
         }
 
+        try {
+          const body = await request.json();
+          const id = Number(body.id);
+
+          if (!Number.isInteger(id) || id <= 0) {
+            return json({ message: "ID de mensaje inválido." }, 400);
+          }
+
+          const row = await env.DB
+            .prepare("SELECT attachment_name FROM messages WHERE id = ?")
+            .bind(id)
+            .first();
+
+          if (row) await deleteAttachments(row);
+
+          await env.DB
+            .prepare("DELETE FROM messages WHERE id = ?")
+            .bind(id)
+            .run();
+
+          return json({ ok: true });
+        } catch (e) {
+          console.error("ERROR /api/messages DELETE", e);
+
+          return json(
+            { message: "No se pudo eliminar el mensaje." },
+            500
+          );
+        }
+      }
+
+      return json({ message: "Método no permitido." }, 405);
+    }
+
+    // LIMPIEZA MANUAL DE MENSAJES ANTIGUOS
+
+    if (url.pathname === "/api/cleanup-messages") {
+      if (!(await isAdmin(request))) {
+        return json({ message: "No autorizado." }, 401);
+      }
+
+      try {
         return json({
           ok: true,
-          deleted
+          deleted: await cleanupOldMessages()
         });
-
-      } catch (error) {
-
-        console.error(
-          "ERROR /api/cleanup-messages:",
-          error
-        );
+      } catch (e) {
+        console.error("ERROR /api/cleanup-messages", e);
 
         return json(
-          {
-            message:
-              "No se pudo realizar la limpieza."
-          },
+          { message: "No se pudo realizar la limpieza." },
           500
         );
       }
     }
 
-    // =========================
-    // ARCHIVOS DEL SITIO
-    // =========================
+    // ARCHIVOS ESTÁTICOS DE LA PÁGINA
 
     if (env.ASSETS) {
       return env.ASSETS.fetch(request);
     }
 
-    return new Response(
-      "FAN - I.N",
-      {
-        status: 200,
-        headers: {
-          "content-type":
-            "text/plain; charset=UTF-8"
-        }
+    return new Response("Bbang-Hola", {
+      status: 200,
+      headers: {
+        "content-type": "text/plain; charset=UTF-8"
       }
-    );
+    });
   },
 
-  // =========================
-  // CRON
-  // =========================
+  // LIMPIEZA AUTOMÁTICA SEMANAL
 
   async scheduled(event, env, ctx) {
+    ctx.waitUntil((async () => {
+      try {
+        const cutoff = new Date(
+          Date.now() - 7 * 86400000
+        ).toISOString();
 
-    ctx.waitUntil(
-      (async () => {
+        const result = await env.DB
+          .prepare(
+            "SELECT id, attachment_name FROM messages WHERE created_at < ?"
+          )
+          .bind(cutoff)
+          .all();
 
-        try {
+        for (const row of result.results || []) {
+          let files = [];
 
-          const cutoff =
-            new Date(
-              Date.now() -
-                7 * 24 * 60 * 60 * 1000
-            ).toISOString();
+          try {
+            const parsed = JSON.parse(row.attachment_name || "[]");
+            if (Array.isArray(parsed)) files = parsed;
+          } catch {}
 
-          const rows =
-            await env.DB
-              .prepare(`
-                SELECT
-                  id,
-                  attachment_name
-                FROM messages
-                WHERE created_at < ?
-              `)
-              .bind(cutoff)
-              .all();
-
-          for (
-            const row
-            of rows.results || []
-          ) {
-
-            let files = [];
-
-            try {
-              const parsed =
-                JSON.parse(
-                  row.attachment_name || "[]"
-                );
-
-              files =
-                Array.isArray(parsed)
-                  ? parsed
-                  : [];
-            } catch (error) {
-              files = [];
-            }
-
-            for (const file of files) {
-
-              if (!file?.key) {
-                continue;
-              }
-
+          for (const file of files) {
+            if (file?.key) {
               try {
-                await env.MESSAGE_FILES.delete(
-                  file.key
-                );
-              } catch (error) {}
+                await env.MESSAGE_FILES?.delete(file.key);
+              } catch {}
             }
-
-            await env.DB
-              .prepare(
-                "DELETE FROM messages WHERE id = ?"
-              )
-              .bind(row.id)
-              .run();
           }
 
-        } catch (error) {
-          console.error(
-            "ERROR limpieza semanal:",
-            error
-          );
+          await env.DB
+            .prepare("DELETE FROM messages WHERE id = ?")
+            .bind(row.id)
+            .run();
         }
-
-      })()
-    );
+      } catch (e) {
+        console.error("ERROR limpieza semanal", e);
+      }
+    })());
   }
 };
