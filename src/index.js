@@ -174,6 +174,8 @@ export default {
         }
       );
     }
+
+        
 // VOTACIONES COMUNITARIAS
 
 if (url.pathname === "/api/community-votes") {
@@ -209,7 +211,7 @@ if (url.pathname === "/api/community-votes") {
         Array.isArray(poll.options)
     );
 
-    // CONSULTAR VOTOS
+    // OBTENER VOTOS
     if (request.method === "GET") {
       const result = await env.DB
         .prepare(`
@@ -221,8 +223,7 @@ if (url.pathname === "/api/community-votes") {
       const votes = {};
 
       for (const poll of validPolls) {
-        votes[String(poll.id)] =
-          poll.options.map(() => 0);
+        votes[String(poll.id)] = poll.options.map(() => 0);
       }
 
       for (const row of result.results || []) {
@@ -230,7 +231,6 @@ if (url.pathname === "/api/community-votes") {
 
         if (
           pollVotes &&
-          Number.isInteger(Number(row.option_index)) &&
           Number(row.option_index) >= 0 &&
           Number(row.option_index) < pollVotes.length
         ) {
@@ -269,31 +269,57 @@ if (url.pathname === "/api/community-votes") {
         optionIndex >= poll.options.length
       ) {
         return json(
-          { message: "Opción de voto inválida." },
+          { message: "La opción seleccionada no es válida." },
           400
         );
       }
 
-      await env.DB
+      // ¿YA EXISTE ESTA OPCIÓN?
+      const existing = await env.DB
         .prepare(`
-          INSERT INTO community_votes (
-            poll_id,
-            option_index,
-            votes
-          )
-          VALUES (?, ?, 1)
-          ON CONFLICT(poll_id, option_index)
-          DO UPDATE SET votes = community_votes.votes + 1
+          SELECT votes
+          FROM community_votes
+          WHERE poll_id = ?
+          AND option_index = ?
         `)
         .bind(pollId, optionIndex)
-        .run();
+        .first();
+
+      if (existing) {
+        await env.DB
+          .prepare(`
+            UPDATE community_votes
+            SET votes = ?
+            WHERE poll_id = ?
+            AND option_index = ?
+          `)
+          .bind(
+            Number(existing.votes || 0) + 1,
+            pollId,
+            optionIndex
+          )
+          .run();
+      } else {
+        await env.DB
+          .prepare(`
+            INSERT INTO community_votes
+            (poll_id, option_index, votes)
+            VALUES (?, ?, ?)
+          `)
+          .bind(
+            pollId,
+            optionIndex,
+            1
+          )
+          .run();
+      }
 
       const updated = await env.DB
         .prepare(`
           SELECT votes
           FROM community_votes
           WHERE poll_id = ?
-            AND option_index = ?
+          AND option_index = ?
         `)
         .bind(pollId, optionIndex)
         .first();
@@ -315,7 +341,10 @@ if (url.pathname === "/api/community-votes") {
     console.error("ERROR /api/community-votes", e);
 
     return json(
-      { message: "No se pudieron procesar los votos." },
+      {
+        ok: false,
+        message: "No se pudieron procesar los votos."
+      },
       500
     );
   }
