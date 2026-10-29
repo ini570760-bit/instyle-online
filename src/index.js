@@ -1,6 +1,7 @@
 export default {
   async fetch(request, env, ctx) {
     const url = new URL(request.url);
+
     const json = (data, status = 200, headers = {}) =>
       new Response(JSON.stringify(data), {
         status,
@@ -11,6 +12,7 @@ export default {
       });
 
     const clean = v => String(v ?? "").trim();
+
     const safeName = v =>
       clean(v)
         .replace(/[^\w.\- áéíóúÁÉÍÓÚñÑ()]/g, "_")
@@ -21,7 +23,11 @@ export default {
 
     function b64url(bytes) {
       let s = "";
-      for (const b of bytes) s += String.fromCharCode(b);
+
+      for (const b of bytes) {
+        s += String.fromCharCode(b);
+      }
+
       return btoa(s)
         .replace(/\+/g, "-")
         .replace(/\//g, "_")
@@ -32,7 +38,10 @@ export default {
       const key = await crypto.subtle.importKey(
         "raw",
         new TextEncoder().encode(secret),
-        { name: "HMAC", hash: "SHA-256" },
+        {
+          name: "HMAC",
+          hash: "SHA-256"
+        },
         false,
         ["sign"]
       );
@@ -50,6 +59,7 @@ export default {
 
     async function isAdmin(req) {
       const secret = clean(env.INSTYLE_ADMIN_SECRET);
+
       if (!secret) return false;
 
       const match = (req.headers.get("Cookie") || "")
@@ -80,7 +90,10 @@ export default {
 
       try {
         const parsed = JSON.parse(row?.attachment_name || "[]");
-        if (Array.isArray(parsed)) files = parsed;
+
+        if (Array.isArray(parsed)) {
+          files = parsed;
+        }
       } catch {}
 
       for (const file of files) {
@@ -120,11 +133,64 @@ export default {
       return deleted;
     }
 
+    // =========================================================
+    // FUNCIONES DE VOTACIONES DE LA COMUNIDAD
+    // =========================================================
+
+    async function ensureCommunityVotesTable() {
+      await env.DB.prepare(`
+        CREATE TABLE IF NOT EXISTS community_votes (
+          voting_id TEXT NOT NULL,
+          option_index INTEGER NOT NULL,
+          votes INTEGER NOT NULL DEFAULT 0,
+          updated_at TEXT NOT NULL,
+          PRIMARY KEY (voting_id, option_index)
+        )
+      `).run();
+    }
+
+    async function getCommunityVoting(votingId) {
+      const row = await env.DB
+        .prepare(
+          "SELECT value FROM site_state WHERE key = ?"
+        )
+        .bind("instyleVotingsV1")
+        .first();
+
+      if (!row?.value) {
+        return null;
+      }
+
+      try {
+        const list = JSON.parse(row.value);
+
+        if (!Array.isArray(list)) {
+          return null;
+        }
+
+        return (
+          list.find(
+            v =>
+              v &&
+              String(v.id) === votingId &&
+              v.type === "instyle"
+          ) || null
+        );
+      } catch {
+        return null;
+      }
+    }
+
+    // =========================================================
     // ACCESO DE ADMINISTRADOR
+    // =========================================================
 
     if (url.pathname === "/api/admin-login") {
       if (request.method !== "POST") {
-        return json({ message: "Método no permitido." }, 405);
+        return json(
+          { message: "Método no permitido." },
+          405
+        );
       }
 
       try {
@@ -133,13 +199,21 @@ export default {
 
         if (!secret || clean(body?.code) !== secret) {
           return json(
-            { ok: false, message: "Clave incorrecta." },
+            {
+              ok: false,
+              message: "Clave incorrecta."
+            },
             401
           );
         }
 
-        const expiry = Math.floor(Date.now() / 1000) + 86400;
-        const sig = await signature(expiry, secret);
+        const expiry =
+          Math.floor(Date.now() / 1000) + 86400;
+
+        const sig = await signature(
+          expiry,
+          secret
+        );
 
         return json(
           { ok: true },
@@ -150,18 +224,36 @@ export default {
           }
         );
       } catch (e) {
-        console.error("ERROR /api/admin-login", e);
-        return json({ message: "Solicitud inválida." }, 400);
+        console.error(
+          "ERROR /api/admin-login",
+          e
+        );
+
+        return json(
+          {
+            message: "Solicitud inválida."
+          },
+          400
+        );
       }
     }
 
     if (url.pathname === "/api/admin-status") {
       if (request.method !== "GET") {
-        return json({ message: "Método no permitido." }, 405);
+        return json(
+          {
+            message: "Método no permitido."
+          },
+          405
+        );
       }
 
       const ok = await isAdmin(request);
-      return json({ ok }, ok ? 200 : 401);
+
+      return json(
+        { ok },
+        ok ? 200 : 401
+      );
     }
 
     if (url.pathname === "/api/admin-logout") {
@@ -175,388 +267,423 @@ export default {
       );
     }
 
+    // =========================================================
+    // VOTACIONES DE LA COMUNIDAD
+    // =========================================================
 
-// VOTACIONES DE LA COMUNIDAD — CONTEO PERSISTENTE EN D1
-
-if (url.pathname === "/api/community-votes") {
-
-  try {
-
-    await env.DB.prepare(`
-      CREATE TABLE IF NOT EXISTS community_votes (
-        voting_id TEXT NOT NULL,
-        option_index INTEGER NOT NULL,
-        votes INTEGER NOT NULL DEFAULT 0,
-        updated_at TEXT NOT NULL,
-        PRIMARY KEY (voting_id, option_index)
-      )
-    `).run();
-
-    // ============================
-    // CARGAR VOTOS
-    // ============================
-
-    if (request.method === "GET") {
-
-      const ids = clean(
-        url.searchParams.get("ids")
-      )
-        .split(",")
-        .map(x => clean(x))
-        .filter(Boolean)
-        .slice(0, 50);
-
-      if (!ids.length) {
-        return json({
-          ok: true,
-          votes: {}
-        });
-      }
-
-      const placeholders =
-        ids.map(() => "?").join(",");
-
-      const rows = await env.DB
-        .prepare(`
-          SELECT
-            voting_id,
-            option_index,
-            votes
-          FROM community_votes
-          WHERE voting_id IN (${placeholders})
-        `)
-        .bind(...ids)
-        .all();
-
-      const votes = {};
-
-      for (const row of rows.results || []) {
-
-        if (!votes[row.voting_id]) {
-          votes[row.voting_id] = {};
-        }
-
-        votes[row.voting_id][
-          String(row.option_index)
-        ] = Number(row.votes || 0);
-      }
-
-      return json({
-        ok: true,
-        votes
-      });
-    }
-
-    // ============================
-    // REGISTRAR VOTO
-    // ============================
-
-    if (request.method === "POST") {
-
-      const body = await request.json();
-
-      const votingId =
-        clean(body?.votingId);
-
-      const optionIndex =
-        Number(body?.optionIndex);
-
-      if (
-        !votingId ||
-        !Number.isInteger(optionIndex) ||
-        optionIndex < 0
-      ) {
-        return json(
-          {
-            message: "Voto inválido."
-          },
-          400
-        );
-      }
-
-      // Buscar la votación guardada
-      // en site_state
-
-      const stateRow = await env.DB
-        .prepare(
-          "SELECT value FROM site_state WHERE key = ?"
-        )
-        .bind("instyleVotingsV1")
-        .first();
-
-      if (!stateRow?.value) {
-
-        return json(
-          {
-            message:
-              "La votación no existe."
-          },
-          404
-        );
-      }
-
-      let votaciones = [];
-
+    if (
+      url.pathname === "/api/community-votes"
+    ) {
       try {
+        await ensureCommunityVotesTable();
 
-        votaciones =
-          JSON.parse(stateRow.value);
+        // -----------------------------------------------------
+        // CARGAR VOTOS
+        // -----------------------------------------------------
 
-        if (!Array.isArray(votaciones)) {
-          votaciones = [];
+        if (request.method === "GET") {
+          const ids = clean(
+            url.searchParams.get("ids")
+          )
+            .split(",")
+            .map(x => clean(x))
+            .filter(Boolean)
+            .slice(0, 50);
+
+          if (!ids.length) {
+            return json({
+              ok: true,
+              votes: {}
+            });
+          }
+
+          const placeholders = ids
+            .map(() => "?")
+            .join(",");
+
+          const result = await env.DB
+            .prepare(`
+              SELECT
+                voting_id,
+                option_index,
+                votes
+              FROM community_votes
+              WHERE voting_id IN (${placeholders})
+            `)
+            .bind(...ids)
+            .all();
+
+          const votes = {};
+
+          for (const id of ids) {
+            votes[id] = {};
+          }
+
+          for (
+            const row of result.results || []
+          ) {
+            if (!votes[row.voting_id]) {
+              votes[row.voting_id] = {};
+            }
+
+            votes[row.voting_id][
+              String(row.option_index)
+            ] = Number(row.votes || 0);
+          }
+
+          return json({
+            ok: true,
+            votes
+          });
         }
 
-      } catch {
+        // -----------------------------------------------------
+        // REGISTRAR VOTO
+        // -----------------------------------------------------
 
-        votaciones = [];
+        if (request.method === "POST") {
+          const body = await request.json();
 
-      }
-
-      const voting =
-        votaciones.find(function(item) {
-
-          return (
-            item &&
-            String(item.id) === votingId &&
-            item.type === "instyle"
+          const votingId = clean(
+            body?.votingId
           );
 
-        });
+          const optionIndex = Number(
+            body?.optionIndex
+          );
 
-      if (!voting) {
+          if (
+            !votingId ||
+            !Number.isInteger(optionIndex) ||
+            optionIndex < 0
+          ) {
+            return json(
+              {
+                ok: false,
+                message:
+                  "Voto inválido."
+              },
+              400
+            );
+          }
+
+          const voting =
+            await getCommunityVoting(
+              votingId
+            );
+
+          if (!voting) {
+            return json(
+              {
+                ok: false,
+                message:
+                  "La votación no existe."
+              },
+              404
+            );
+          }
+
+          // Una votación puede utilizar status
+          // o active según la información guardada.
+
+          const active =
+            voting.status === "active" ||
+            voting.active === true ||
+            !voting.status;
+
+          if (!active) {
+            return json(
+              {
+                ok: false,
+                message:
+                  "Esta votación ya no está activa."
+              },
+              400
+            );
+          }
+
+          if (
+            !Array.isArray(voting.options) ||
+            optionIndex >=
+              voting.options.length
+          ) {
+            return json(
+              {
+                ok: false,
+                message:
+                  "La opción elegida no es válida."
+              },
+              400
+            );
+          }
+
+          const updatedAt =
+            new Date().toISOString();
+
+          // Incrementar voto
+
+          await env.DB
+            .prepare(`
+              INSERT INTO community_votes (
+                voting_id,
+                option_index,
+                votes,
+                updated_at
+              )
+              VALUES (?, ?, 1, ?)
+
+              ON CONFLICT(
+                voting_id,
+                option_index
+              )
+
+              DO UPDATE SET
+                votes =
+                  community_votes.votes + 1,
+                updated_at =
+                  excluded.updated_at
+            `)
+            .bind(
+              votingId,
+              optionIndex,
+              updatedAt
+            )
+            .run();
+
+          // Obtener contador actualizado
+
+          const row = await env.DB
+            .prepare(`
+              SELECT votes
+              FROM community_votes
+              WHERE voting_id = ?
+              AND option_index = ?
+            `)
+            .bind(
+              votingId,
+              optionIndex
+            )
+            .first();
+
+          return json({
+            ok: true,
+            votingId,
+            optionIndex,
+            count: Number(
+              row?.votes || 0
+            )
+          });
+        }
 
         return json(
           {
+            ok: false,
             message:
-              "La votación no existe."
+              "Método no permitido."
           },
-          404
+          405
         );
-      }
-
-      // Verificar que siga activa
-
-      const active =
-        voting.status === "active" ||
-        voting.active === true ||
-        !voting.status;
-
-      if (!active) {
+      } catch (e) {
+        console.error(
+          "ERROR /api/community-votes",
+          e
+        );
 
         return json(
           {
+            ok: false,
             message:
-              "Esta votación ya no está activa."
+              "No se pudo registrar el voto.",
+            error:
+              String(
+                e?.message || e
+              )
           },
-          400
+          500
         );
       }
-
-      // Verificar opción
-
-      if (
-        !Array.isArray(voting.options) ||
-        optionIndex >= voting.options.length
-      ) {
-
-        return json(
-          {
-            message:
-              "La opción elegida no es válida."
-          },
-          400
-        );
-      }
-
-      const updatedAt =
-        new Date().toISOString();
-
-      // Incrementar voto
-
-      await env.DB
-        .prepare(`
-          INSERT INTO community_votes (
-            voting_id,
-            option_index,
-            votes,
-            updated_at
-          )
-          VALUES (?, ?, 1, ?)
-
-          ON CONFLICT(
-            voting_id,
-            option_index
-          )
-
-          DO UPDATE SET
-            votes =
-              community_votes.votes + 1,
-            updated_at =
-              excluded.updated_at
-        `)
-        .bind(
-          votingId,
-          optionIndex,
-          updatedAt
-        )
-        .run();
-
-      // Obtener contador actualizado
-
-      const row = await env.DB
-        .prepare(`
-          SELECT votes
-          FROM community_votes
-          WHERE voting_id = ?
-          AND option_index = ?
-        `)
-        .bind(
-          votingId,
-          optionIndex
-        )
-        .first();
-
-      return json({
-        ok: true,
-        votingId,
-        optionIndex,
-        count: Number(
-          row?.votes || 0
-        )
-      });
     }
 
-    return json(
-      {
-        message:
-          "Método no permitido."
-      },
-      405
-    );
-
-  } catch (e) {
-
-    console.error(
-      "ERROR /api/community-votes",
-      e
-    );
-
-    return json(
-      {
-        ok: false,
-        message:
-          "No se pudo registrar el voto.",
-        error:
-          String(e?.message || e)
-      },
-      500
-    );
-  }
-}
-    
+    // =========================================================
     // ESTADO Y CONTENIDO EDITABLE DEL SITIO
+    // =========================================================
 
     if (url.pathname === "/api/state") {
       if (request.method === "GET") {
         try {
           const rows = await env.DB
-            .prepare("SELECT key, value FROM site_state")
+            .prepare(
+              "SELECT key, value FROM site_state"
+            )
             .all();
 
           const state = {};
 
-          for (const row of rows.results || []) {
+          for (
+            const row of rows.results || []
+          ) {
             state[row.key] = row.value;
           }
 
-          return json({ ok: true, state });
+          return json({
+            ok: true,
+            state
+          });
         } catch (e) {
-          console.error("ERROR /api/state GET", e);
+          console.error(
+            "ERROR /api/state GET",
+            e
+          );
+
           return json(
-            { message: "No se pudo cargar el estado del sitio." },
+            {
+              message:
+                "No se pudo cargar el estado del sitio."
+            },
             500
           );
         }
       }
 
       if (request.method !== "POST") {
-        return json({ message: "Método no permitido." }, 405);
+        return json(
+          {
+            message:
+              "Método no permitido."
+          },
+          405
+        );
       }
 
       if (!(await isAdmin(request))) {
-        return json({ message: "No autorizado." }, 401);
+        return json(
+          {
+            message:
+              "No autorizado."
+          },
+          401
+        );
       }
 
       try {
-        const body = await request.json();
+        const body =
+          await request.json();
 
         if (
           body?.state &&
           typeof body.state === "object" &&
           !Array.isArray(body.state)
         ) {
-          const entries = Object.entries(body.state);
+          const entries =
+            Object.entries(body.state);
 
-          for (const [key, value] of entries) {
+          for (
+            const [key, value]
+              of entries
+          ) {
             if (!key) continue;
 
             await env.DB
               .prepare(`
-                INSERT INTO site_state (key, value)
+                INSERT INTO site_state
+                  (key, value)
                 VALUES (?, ?)
+
                 ON CONFLICT(key)
-                DO UPDATE SET value = excluded.value
+                DO UPDATE SET
+                  value = excluded.value
               `)
-              .bind(key, value == null ? null : String(value))
+              .bind(
+                key,
+                value == null
+                  ? null
+                  : String(value)
+              )
               .run();
           }
 
-          return json({ ok: true, saved: entries.length });
+          return json({
+            ok: true,
+            saved: entries.length
+          });
         }
 
-        const key = clean(body?.key);
-        const value = body?.value ?? null;
+        const key = clean(
+          body?.key
+        );
+
+        const value =
+          body?.value ?? null;
 
         if (!key) {
           return json(
-            { message: "No se recibió ningún estado para guardar." },
+            {
+              message:
+                "No se recibió ningún estado para guardar."
+            },
             400
           );
         }
 
         if (value === null) {
           await env.DB
-            .prepare("DELETE FROM site_state WHERE key = ?")
+            .prepare(
+              "DELETE FROM site_state WHERE key = ?"
+            )
             .bind(key)
             .run();
         } else {
           await env.DB
             .prepare(`
-              INSERT INTO site_state (key, value)
+              INSERT INTO site_state
+                (key, value)
               VALUES (?, ?)
+
               ON CONFLICT(key)
-              DO UPDATE SET value = excluded.value
+              DO UPDATE SET
+                value = excluded.value
             `)
-            .bind(key, String(value))
+            .bind(
+              key,
+              String(value)
+            )
             .run();
         }
 
-        return json({ ok: true, key });
+        return json({
+          ok: true,
+          key
+        });
       } catch (e) {
-        console.error("ERROR /api/state POST", e);
+        console.error(
+          "ERROR /api/state POST",
+          e
+        );
+
         return json(
-          { message: "No se pudo guardar el estado." },
+          {
+            message:
+              "No se pudo guardar el estado."
+          },
           500
         );
       }
     }
 
+    // =========================================================
     // ARCHIVOS DEL SITIO
+    // =========================================================
 
     if (url.pathname === "/api/site-file") {
       if (request.method === "POST") {
         if (!(await isAdmin(request))) {
-          return json({ message: "No autorizado." }, 401);
+          return json(
+            {
+              message:
+                "No autorizado."
+            },
+            401
+          );
         }
 
         if (!env.MESSAGE_FILES) {
@@ -570,22 +697,48 @@ if (url.pathname === "/api/community-votes") {
         }
 
         try {
-          const form = await request.formData();
-          const file = form.get("file");
-          const prefix = clean(form.get("prefix") || "site");
+          const form =
+            await request.formData();
 
-          if (!file || typeof file.arrayBuffer !== "function") {
-            return json({ message: "No se recibió ningún archivo." }, 400);
-          }
+          const file =
+            form.get("file");
 
-          if (file.size > 8 * 1024 * 1024) {
+          const prefix =
+            clean(
+              form.get("prefix") ||
+              "site"
+            );
+
+          if (
+            !file ||
+            typeof file.arrayBuffer !==
+              "function"
+          ) {
             return json(
-              { message: "El archivo es demasiado pesado. Máximo 8 MB." },
+              {
+                message:
+                  "No se recibió ningún archivo."
+              },
               400
             );
           }
 
-          const type = clean(file.type) || "application/octet-stream";
+          if (
+            file.size >
+            8 * 1024 * 1024
+          ) {
+            return json(
+              {
+                message:
+                  "El archivo es demasiado pesado. Máximo 8 MB."
+              },
+              400
+            );
+          }
+
+          const type =
+            clean(file.type) ||
+            "application/octet-stream";
 
           const allowedTypes = [
             "image/jpeg",
@@ -597,14 +750,29 @@ if (url.pathname === "/api/community-votes") {
             "text/plain"
           ];
 
-          if (!allowedTypes.includes(type)) {
-            return json({ message: "Tipo de archivo no permitido." }, 400);
+          if (
+            !allowedTypes.includes(type)
+          ) {
+            return json(
+              {
+                message:
+                  "Tipo de archivo no permitido."
+              },
+              400
+            );
           }
 
           const safePrefix =
-            prefix.replace(/[^\w-]/g, "_").slice(0, 50) || "site";
+            prefix
+              .replace(/[^\w-]/g, "_")
+              .slice(0, 50) ||
+            "site";
 
-          const name = safeName(file.name || "archivo");
+          const name =
+            safeName(
+              file.name ||
+              "archivo"
+            );
 
           const key =
             `site/${safePrefix}/${Date.now()}-${crypto.randomUUID()}-${name}`;
@@ -624,14 +792,22 @@ if (url.pathname === "/api/community-votes") {
             ok: true,
             key,
             url: new URL(
-              "/api/site-file?key=" + encodeURIComponent(key),
+              "/api/site-file?key=" +
+                encodeURIComponent(key),
               request.url
             ).href
           });
         } catch (e) {
-          console.error("ERROR /api/site-file POST", e);
+          console.error(
+            "ERROR /api/site-file POST",
+            e
+          );
+
           return json(
-            { message: "No se pudo guardar el archivo." },
+            {
+              message:
+                "No se pudo guardar el archivo."
+            },
             500
           );
         }
@@ -639,52 +815,120 @@ if (url.pathname === "/api/community-votes") {
 
       if (request.method === "GET") {
         try {
-          const key = clean(url.searchParams.get("key"));
-
-          if (!key.startsWith("site/")) {
-            return new Response("Archivo inválido.", { status: 400 });
-          }
-
-          const result = await env.MESSAGE_FILES.getWithMetadata(
-            key,
-            { type: "arrayBuffer" }
+          const key = clean(
+            url.searchParams.get(
+              "key"
+            )
           );
 
-          if (!result || result.value === null) {
-            return new Response("Archivo no encontrado.", { status: 404 });
+          if (
+            !key.startsWith(
+              "site/"
+            )
+          ) {
+            return new Response(
+              "Archivo inválido.",
+              { status: 400 }
+            );
           }
 
-          return new Response(result.value, {
-            headers: {
-              "Content-Type":
-                result.metadata?.contentType || "application/octet-stream",
-              "Cache-Control": "public, max-age=31536000",
-              "Content-Disposition": "inline"
+          const result =
+            await env.MESSAGE_FILES
+              .getWithMetadata(
+                key,
+                {
+                  type:
+                    "arrayBuffer"
+                }
+              );
+
+          if (
+            !result ||
+            result.value === null
+          ) {
+            return new Response(
+              "Archivo no encontrado.",
+              { status: 404 }
+            );
+          }
+
+          return new Response(
+            result.value,
+            {
+              headers: {
+                "Content-Type":
+                  result.metadata
+                    ?.contentType ||
+                  "application/octet-stream",
+                "Cache-Control":
+                  "public, max-age=31536000",
+                "Content-Disposition":
+                  "inline"
+              }
             }
-          });
+          );
         } catch (e) {
-          console.error("ERROR /api/site-file GET", e);
-          return new Response("No se pudo abrir el archivo.", { status: 500 });
+          console.error(
+            "ERROR /api/site-file GET",
+            e
+          );
+
+          return new Response(
+            "No se pudo abrir el archivo.",
+            { status: 500 }
+          );
         }
       }
 
-      return json({ message: "Método no permitido." }, 405);
+      return json(
+        {
+          message:
+            "Método no permitido."
+        },
+        405
+      );
     }
 
-    // DESCARGA DE ARCHIVOS ADJUNTOS A LOS MENSAJES
+    // =========================================================
+    // DESCARGA DE ARCHIVOS DE MENSAJES
+    // =========================================================
 
-    if (url.pathname === "/api/message-file") {
+    if (
+      url.pathname ===
+      "/api/message-file"
+    ) {
       if (request.method !== "GET") {
-        return json({ message: "Método no permitido." }, 405);
+        return json(
+          {
+            message:
+              "Método no permitido."
+          },
+          405
+        );
       }
 
       if (!(await isAdmin(request))) {
-        return json({ message: "No autorizado." }, 401);
+        return json(
+          {
+            message:
+              "No autorizado."
+          },
+          401
+        );
       }
 
       try {
-        const id = Number(url.searchParams.get("message"));
-        const index = Number(url.searchParams.get("file"));
+        const id = Number(
+          url.searchParams.get(
+            "message"
+          )
+        );
+
+        const index = Number(
+          url.searchParams.get(
+            "file"
+          )
+        );
 
         if (
           !Number.isInteger(id) ||
@@ -692,106 +936,205 @@ if (url.pathname === "/api/community-votes") {
           !Number.isInteger(index) ||
           index < 0
         ) {
-          return json({ message: "Archivo inválido." }, 400);
+          return json(
+            {
+              message:
+                "Archivo inválido."
+            },
+            400
+          );
         }
 
-        const row = await env.DB
-          .prepare("SELECT attachment_name FROM messages WHERE id = ?")
-          .bind(id)
-          .first();
+        const row =
+          await env.DB
+            .prepare(
+              "SELECT attachment_name FROM messages WHERE id = ?"
+            )
+            .bind(id)
+            .first();
 
         if (!row) {
-          return json({ message: "Mensaje no encontrado." }, 404);
+          return json(
+            {
+              message:
+                "Mensaje no encontrado."
+            },
+            404
+          );
         }
 
         let files = [];
 
         try {
-          const parsed = JSON.parse(row.attachment_name || "[]");
-          if (Array.isArray(parsed)) files = parsed;
+          const parsed =
+            JSON.parse(
+              row.attachment_name ||
+                "[]"
+            );
+
+          if (
+            Array.isArray(parsed)
+          ) {
+            files = parsed;
+          }
         } catch {}
 
-        const file = files[index];
+        const file =
+          files[index];
 
         if (!file?.key) {
-          return json({ message: "Archivo no encontrado." }, 404);
-        }
-
-        const data = await env.MESSAGE_FILES.get(
-          file.key,
-          { type: "arrayBuffer" }
-        );
-
-        if (!data) {
           return json(
-            { message: "El archivo ya no está disponible." },
+            {
+              message:
+                "Archivo no encontrado."
+            },
             404
           );
         }
 
-        return new Response(data, {
-          headers: {
-            "Content-Type": file.type || "application/octet-stream",
-            "Content-Length": String(file.size || data.byteLength),
-            "Content-Disposition":
-              `attachment; filename="${safeName(file.name || "archivo")}"`,
-            "Cache-Control": "private, no-store"
+        const data =
+          await env.MESSAGE_FILES.get(
+            file.key,
+            {
+              type:
+                "arrayBuffer"
+            }
+          );
+
+        if (!data) {
+          return json(
+            {
+              message:
+                "El archivo ya no está disponible."
+            },
+            404
+          );
+        }
+
+        return new Response(
+          data,
+          {
+            headers: {
+              "Content-Type":
+                file.type ||
+                "application/octet-stream",
+
+              "Content-Length":
+                String(
+                  file.size ||
+                    data.byteLength
+                ),
+
+              "Content-Disposition":
+                `attachment; filename="${safeName(
+                  file.name ||
+                    "archivo"
+                )}"`,
+
+              "Cache-Control":
+                "private, no-store"
+            }
           }
-        });
+        );
       } catch (e) {
-        console.error("ERROR /api/message-file", e);
+        console.error(
+          "ERROR /api/message-file",
+          e
+        );
+
         return json(
-          { message: "No se pudo abrir el archivo." },
+          {
+            message:
+              "No se pudo abrir el archivo."
+          },
           500
         );
       }
     }
 
+    // =========================================================
     // MENSAJES DE LOS VISITANTES
+    // =========================================================
 
-    if (url.pathname === "/api/messages") {
+    if (
+      url.pathname ===
+      "/api/messages"
+    ) {
       if (request.method === "POST") {
         const savedKeys = [];
 
         try {
-          const form = await request.formData();
+          const form =
+            await request.formData();
 
-          const category = clean(
-            form.get("category") ||
-            form.get("motivo") ||
-            form.get("categoria") ||
-            form.get("reason")
-          );
+          const category =
+            clean(
+              form.get("category") ||
+              form.get("motivo") ||
+              form.get("categoria") ||
+              form.get("reason")
+            );
 
-          const name = clean(
-            form.get("name") || form.get("nombre")
-          );
+          const name =
+            clean(
+              form.get("name") ||
+              form.get("nombre")
+            );
 
-          const email = clean(
-            form.get("email") || form.get("correo")
-          );
+          const email =
+            clean(
+              form.get("email") ||
+              form.get("correo")
+            );
 
-          const description = clean(
-            form.get("description") ||
-            form.get("descripcion") ||
-            form.get("mensaje")
-          );
+          const description =
+            clean(
+              form.get("description") ||
+              form.get("descripcion") ||
+              form.get("mensaje")
+            );
 
-          if (clean(form.get("website"))) {
-            return json({ ok: true });
+          if (
+            clean(
+              form.get("website")
+            )
+          ) {
+            return json({
+              ok: true
+            });
           }
 
           if (!category) {
-            return json({ message: "Seleccioná una categoría." }, 400);
+            return json(
+              {
+                message:
+                  "Seleccioná una categoría."
+              },
+              400
+            );
           }
 
           if (!description) {
-            return json({ message: "Escribí el mensaje." }, 400);
+            return json(
+              {
+                message:
+                  "Escribí el mensaje."
+              },
+              400
+            );
           }
 
-          if (email && !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email)) {
+          if (
+            email &&
+            !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(
+              email
+            )
+          ) {
             return json(
-              { message: "El correo electrónico no es válido." },
+              {
+                message:
+                  "El correo electrónico no es válido."
+              },
               400
             );
           }
@@ -799,16 +1142,24 @@ if (url.pathname === "/api/community-votes") {
           const id = Date.now();
           const attachments = [];
 
-          for (const file of form.getAll("files")) {
+          for (
+            const file of form.getAll(
+              "files"
+            )
+          ) {
             if (
               !file ||
-              typeof file.arrayBuffer !== "function" ||
+              typeof file.arrayBuffer !==
+                "function" ||
               !file.size
             ) {
               continue;
             }
 
-            if (file.size > 8 * 1024 * 1024) {
+            if (
+              file.size >
+              8 * 1024 * 1024
+            ) {
               return json(
                 {
                   message:
@@ -818,8 +1169,15 @@ if (url.pathname === "/api/community-votes") {
               );
             }
 
-            const type = clean(file.type) || "application/octet-stream";
-            const filename = safeName(file.name || "archivo");
+            const type =
+              clean(file.type) ||
+              "application/octet-stream";
+
+            const filename =
+              safeName(
+                file.name ||
+                  "archivo"
+              );
 
             const key =
               `messages/${id}/${Date.now()}-${crypto.randomUUID()}-${filename}`;
@@ -830,7 +1188,8 @@ if (url.pathname === "/api/community-votes") {
               {
                 metadata: {
                   contentType: type,
-                  originalName: filename
+                  originalName:
+                    filename
                 }
               }
             );
@@ -866,25 +1225,42 @@ if (url.pathname === "/api/community-votes") {
               name,
               email,
               description,
-              JSON.stringify(attachments),
-              attachments[0]?.type || null,
-              attachments[0]?.size || null,
+              JSON.stringify(
+                attachments
+              ),
+              attachments[0]?.type ||
+                null,
+              attachments[0]?.size ||
+                null,
               new Date().toISOString()
             )
             .run();
 
-          return json({ ok: true, id });
+          return json({
+            ok: true,
+            id
+          });
         } catch (e) {
-          for (const key of savedKeys) {
+          for (
+            const key of savedKeys
+          ) {
             try {
-              await env.MESSAGE_FILES?.delete(key);
+              await env.MESSAGE_FILES?.delete(
+                key
+              );
             } catch {}
           }
 
-          console.error("ERROR /api/messages POST", e);
+          console.error(
+            "ERROR /api/messages POST",
+            e
+          );
 
           return json(
-            { message: "No se pudo enviar el mensaje." },
+            {
+              message:
+                "No se pudo enviar el mensaje."
+            },
             500
           );
         }
@@ -892,44 +1268,76 @@ if (url.pathname === "/api/community-votes") {
 
       if (request.method === "GET") {
         if (!(await isAdmin(request))) {
-          return json({ message: "No autorizado." }, 401);
+          return json(
+            {
+              message:
+                "No autorizado."
+            },
+            401
+          );
         }
 
         try {
-          const rows = await env.DB
-            .prepare(`
-              SELECT
-                id,
-                category,
-                name,
-                email,
-                description,
-                attachment_name,
-                attachment_type,
-                attachment_size,
-                created_at
-              FROM messages
-              ORDER BY created_at DESC
-            `)
-            .all();
+          const rows =
+            await env.DB
+              .prepare(`
+                SELECT
+                  id,
+                  category,
+                  name,
+                  email,
+                  description,
+                  attachment_name,
+                  attachment_type,
+                  attachment_size,
+                  created_at
+                FROM messages
+                ORDER BY created_at DESC
+              `)
+              .all();
 
-          const messages = (rows.results || []).map(row => {
-            let attachments = [];
+          const messages =
+            (rows.results || [])
+              .map(row => {
+                let attachments = [];
 
-            try {
-              const parsed = JSON.parse(row.attachment_name || "[]");
-              if (Array.isArray(parsed)) attachments = parsed;
-            } catch {}
+                try {
+                  const parsed =
+                    JSON.parse(
+                      row.attachment_name ||
+                        "[]"
+                    );
 
-            return { ...row, attachments };
+                  if (
+                    Array.isArray(
+                      parsed
+                    )
+                  ) {
+                    attachments =
+                      parsed;
+                  }
+                } catch {}
+
+                return {
+                  ...row,
+                  attachments
+                };
+              });
+
+          return json({
+            messages
           });
-
-          return json({ messages });
         } catch (e) {
-          console.error("ERROR /api/messages GET", e);
+          console.error(
+            "ERROR /api/messages GET",
+            e
+          );
 
           return json(
-            { message: "No se pudieron cargar los mensajes." },
+            {
+              message:
+                "No se pudieron cargar los mensajes."
+            },
             500
           );
         }
@@ -937,119 +1345,221 @@ if (url.pathname === "/api/community-votes") {
 
       if (request.method === "DELETE") {
         if (!(await isAdmin(request))) {
-          return json({ message: "No autorizado." }, 401);
+          return json(
+            {
+              message:
+                "No autorizado."
+            },
+            401
+          );
         }
 
         try {
-          const body = await request.json();
-          const id = Number(body.id);
+          const body =
+            await request.json();
 
-          if (!Number.isInteger(id) || id <= 0) {
-            return json({ message: "ID de mensaje inválido." }, 400);
+          const id = Number(
+            body.id
+          );
+
+          if (
+            !Number.isInteger(id) ||
+            id <= 0
+          ) {
+            return json(
+              {
+                message:
+                  "ID de mensaje inválido."
+              },
+              400
+            );
           }
 
-          const row = await env.DB
-            .prepare("SELECT attachment_name FROM messages WHERE id = ?")
-            .bind(id)
-            .first();
+          const row =
+            await env.DB
+              .prepare(
+                "SELECT attachment_name FROM messages WHERE id = ?"
+              )
+              .bind(id)
+              .first();
 
-          if (row) await deleteAttachments(row);
+          if (row) {
+            await deleteAttachments(
+              row
+            );
+          }
 
           await env.DB
-            .prepare("DELETE FROM messages WHERE id = ?")
+            .prepare(
+              "DELETE FROM messages WHERE id = ?"
+            )
             .bind(id)
             .run();
 
-          return json({ ok: true });
+          return json({
+            ok: true
+          });
         } catch (e) {
-          console.error("ERROR /api/messages DELETE", e);
+          console.error(
+            "ERROR /api/messages DELETE",
+            e
+          );
 
           return json(
-            { message: "No se pudo eliminar el mensaje." },
+            {
+              message:
+                "No se pudo eliminar el mensaje."
+            },
             500
           );
         }
       }
 
-      return json({ message: "Método no permitido." }, 405);
+      return json(
+        {
+          message:
+            "Método no permitido."
+        },
+        405
+      );
     }
 
+    // =========================================================
     // LIMPIEZA MANUAL DE MENSAJES ANTIGUOS
+    // =========================================================
 
-    if (url.pathname === "/api/cleanup-messages") {
+    if (
+      url.pathname ===
+      "/api/cleanup-messages"
+    ) {
       if (!(await isAdmin(request))) {
-        return json({ message: "No autorizado." }, 401);
+        return json(
+          {
+            message:
+              "No autorizado."
+          },
+          401
+        );
       }
 
       try {
         return json({
           ok: true,
-          deleted: await cleanupOldMessages()
+          deleted:
+            await cleanupOldMessages()
         });
       } catch (e) {
-        console.error("ERROR /api/cleanup-messages", e);
+        console.error(
+          "ERROR /api/cleanup-messages",
+          e
+        );
 
         return json(
-          { message: "No se pudo realizar la limpieza." },
+          {
+            message:
+              "No se pudo realizar la limpieza."
+          },
           500
         );
       }
     }
 
-    // ARCHIVOS ESTÁTICOS DE LA PÁGINA
+    // =========================================================
+    // ARCHIVOS ESTÁTICOS
+    // =========================================================
 
     if (env.ASSETS) {
-      return env.ASSETS.fetch(request);
+      return env.ASSETS.fetch(
+        request
+      );
     }
 
-    return new Response("Bbang-Hola", {
-      status: 200,
-      headers: {
-        "content-type": "text/plain; charset=UTF-8"
+    return new Response(
+      "Bbang-Hola",
+      {
+        status: 200,
+        headers: {
+          "content-type":
+            "text/plain; charset=UTF-8"
+        }
       }
-    });
+    );
   },
 
+  // =========================================================
   // LIMPIEZA AUTOMÁTICA SEMANAL
+  // =========================================================
 
-  async scheduled(event, env, ctx) {
-    ctx.waitUntil((async () => {
-      try {
-        const cutoff = new Date(
-          Date.now() - 7 * 86400000
-        ).toISOString();
+  async scheduled(
+    event,
+    env,
+    ctx
+  ) {
+    ctx.waitUntil(
+      (async () => {
+        try {
+          const cutoff =
+            new Date(
+              Date.now() -
+                7 * 86400000
+            ).toISOString();
 
-        const result = await env.DB
-          .prepare(
-            "SELECT id, attachment_name FROM messages WHERE created_at < ?"
-          )
-          .bind(cutoff)
-          .all();
+          const result =
+            await env.DB
+              .prepare(
+                "SELECT id, attachment_name FROM messages WHERE created_at < ?"
+              )
+              .bind(cutoff)
+              .all();
 
-        for (const row of result.results || []) {
-          let files = [];
+          for (
+            const row of
+              result.results || []
+          ) {
+            let files = [];
 
-          try {
-            const parsed = JSON.parse(row.attachment_name || "[]");
-            if (Array.isArray(parsed)) files = parsed;
-          } catch {}
+            try {
+              const parsed =
+                JSON.parse(
+                  row.attachment_name ||
+                    "[]"
+                );
 
-          for (const file of files) {
-            if (file?.key) {
-              try {
-                await env.MESSAGE_FILES?.delete(file.key);
-              } catch {}
+              if (
+                Array.isArray(
+                  parsed
+                )
+              ) {
+                files = parsed;
+              }
+            } catch {}
+
+            for (
+              const file of files
+            ) {
+              if (file?.key) {
+                try {
+                  await env.MESSAGE_FILES?.delete(
+                    file.key
+                  );
+                } catch {}
+              }
             }
-          }
 
-          await env.DB
-            .prepare("DELETE FROM messages WHERE id = ?")
-            .bind(row.id)
-            .run();
+            await env.DB
+              .prepare(
+                "DELETE FROM messages WHERE id = ?"
+              )
+              .bind(row.id)
+              .run();
+          }
+        } catch (e) {
+          console.error(
+            "ERROR limpieza semanal",
+            e
+          );
         }
-      } catch (e) {
-        console.error("ERROR limpieza semanal", e);
-      }
-    })());
+      })()
+    );
   }
 };
