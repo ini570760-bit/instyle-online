@@ -174,7 +174,153 @@ export default {
         }
       );
     }
+// VOTACIONES COMUNITARIAS
 
+if (url.pathname === "/api/community-votes") {
+  try {
+    await env.DB.prepare(`
+      CREATE TABLE IF NOT EXISTS community_votes (
+        poll_id TEXT NOT NULL,
+        option_index INTEGER NOT NULL,
+        votes INTEGER NOT NULL DEFAULT 0,
+        PRIMARY KEY (poll_id, option_index)
+      )
+    `).run();
+
+    const stateRow = await env.DB
+      .prepare("SELECT value FROM site_state WHERE key = ?")
+      .bind("instyleVotingsV1")
+      .first();
+
+    let polls = [];
+
+    try {
+      polls = JSON.parse(stateRow?.value || "[]");
+      if (!Array.isArray(polls)) polls = [];
+    } catch {
+      polls = [];
+    }
+
+    const validPolls = polls.filter(
+      poll =>
+        poll &&
+        poll.id &&
+        poll.type === "instyle" &&
+        Array.isArray(poll.options)
+    );
+
+    // CONSULTAR VOTOS
+    if (request.method === "GET") {
+      const result = await env.DB
+        .prepare(`
+          SELECT poll_id, option_index, votes
+          FROM community_votes
+        `)
+        .all();
+
+      const votes = {};
+
+      for (const poll of validPolls) {
+        votes[String(poll.id)] =
+          poll.options.map(() => 0);
+      }
+
+      for (const row of result.results || []) {
+        const pollVotes = votes[String(row.poll_id)];
+
+        if (
+          pollVotes &&
+          Number.isInteger(Number(row.option_index)) &&
+          Number(row.option_index) >= 0 &&
+          Number(row.option_index) < pollVotes.length
+        ) {
+          pollVotes[Number(row.option_index)] =
+            Number(row.votes) || 0;
+        }
+      }
+
+      return json({
+        ok: true,
+        votes
+      });
+    }
+
+    // REGISTRAR VOTO
+    if (request.method === "POST") {
+      const body = await request.json();
+
+      const pollId = clean(body?.pollId);
+      const optionIndex = Number(body?.optionIndex);
+
+      const poll = validPolls.find(
+        item => String(item.id) === pollId
+      );
+
+      if (!poll) {
+        return json(
+          { message: "La votación no existe." },
+          404
+        );
+      }
+
+      if (
+        !Number.isInteger(optionIndex) ||
+        optionIndex < 0 ||
+        optionIndex >= poll.options.length
+      ) {
+        return json(
+          { message: "Opción de voto inválida." },
+          400
+        );
+      }
+
+      await env.DB
+        .prepare(`
+          INSERT INTO community_votes (
+            poll_id,
+            option_index,
+            votes
+          )
+          VALUES (?, ?, 1)
+          ON CONFLICT(poll_id, option_index)
+          DO UPDATE SET votes = community_votes.votes + 1
+        `)
+        .bind(pollId, optionIndex)
+        .run();
+
+      const updated = await env.DB
+        .prepare(`
+          SELECT votes
+          FROM community_votes
+          WHERE poll_id = ?
+            AND option_index = ?
+        `)
+        .bind(pollId, optionIndex)
+        .first();
+
+      return json({
+        ok: true,
+        pollId,
+        optionIndex,
+        votes: Number(updated?.votes || 0)
+      });
+    }
+
+    return json(
+      { message: "Método no permitido." },
+      405
+    );
+
+  } catch (e) {
+    console.error("ERROR /api/community-votes", e);
+
+    return json(
+      { message: "No se pudieron procesar los votos." },
+      500
+    );
+  }
+}
+    
     // ESTADO Y CONTENIDO EDITABLE DEL SITIO
 
     if (url.pathname === "/api/state") {
