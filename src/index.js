@@ -175,68 +175,70 @@ export default {
       );
     }
 
-        
-// VOTACIONES COMUNITARIAS
+
+// VOTACIONES DE LA COMUNIDAD — CONTEO PERSISTENTE EN D1
 
 if (url.pathname === "/api/community-votes") {
+
   try {
+
     await env.DB.prepare(`
       CREATE TABLE IF NOT EXISTS community_votes (
-        poll_id TEXT NOT NULL,
+        voting_id TEXT NOT NULL,
         option_index INTEGER NOT NULL,
         votes INTEGER NOT NULL DEFAULT 0,
-        PRIMARY KEY (poll_id, option_index)
+        updated_at TEXT NOT NULL,
+        PRIMARY KEY (voting_id, option_index)
       )
     `).run();
 
-    const stateRow = await env.DB
-      .prepare("SELECT value FROM site_state WHERE key = ?")
-      .bind("instyleVotingsV1")
-      .first();
+    // ============================
+    // CARGAR VOTOS
+    // ============================
 
-    let polls = [];
-
-    try {
-      polls = JSON.parse(stateRow?.value || "[]");
-      if (!Array.isArray(polls)) polls = [];
-    } catch {
-      polls = [];
-    }
-
-    const validPolls = polls.filter(
-      poll =>
-        poll &&
-        poll.id &&
-        poll.type === "instyle" &&
-        Array.isArray(poll.options)
-    );
-
-    // OBTENER VOTOS
     if (request.method === "GET") {
-      const result = await env.DB
+
+      const ids = clean(
+        url.searchParams.get("ids")
+      )
+        .split(",")
+        .map(x => clean(x))
+        .filter(Boolean)
+        .slice(0, 50);
+
+      if (!ids.length) {
+        return json({
+          ok: true,
+          votes: {}
+        });
+      }
+
+      const placeholders =
+        ids.map(() => "?").join(",");
+
+      const rows = await env.DB
         .prepare(`
-          SELECT poll_id, option_index, votes
+          SELECT
+            voting_id,
+            option_index,
+            votes
           FROM community_votes
+          WHERE voting_id IN (${placeholders})
         `)
+        .bind(...ids)
         .all();
 
       const votes = {};
 
-      for (const poll of validPolls) {
-        votes[String(poll.id)] = poll.options.map(() => 0);
-      }
+      for (const row of rows.results || []) {
 
-      for (const row of result.results || []) {
-        const pollVotes = votes[String(row.poll_id)];
-
-        if (
-          pollVotes &&
-          Number(row.option_index) >= 0 &&
-          Number(row.option_index) < pollVotes.length
-        ) {
-          pollVotes[Number(row.option_index)] =
-            Number(row.votes) || 0;
+        if (!votes[row.voting_id]) {
+          votes[row.voting_id] = {};
         }
+
+        votes[row.voting_id][
+          String(row.option_index)
+        ] = Number(row.votes || 0);
       }
 
       return json({
@@ -245,105 +247,207 @@ if (url.pathname === "/api/community-votes") {
       });
     }
 
+    // ============================
     // REGISTRAR VOTO
+    // ============================
+
     if (request.method === "POST") {
+
       const body = await request.json();
 
-      const pollId = clean(body?.pollId);
-      const optionIndex = Number(body?.optionIndex);
+      const votingId =
+        clean(body?.votingId);
 
-      const poll = validPolls.find(
-        item => String(item.id) === pollId
-      );
-
-      if (!poll) {
-        return json(
-          { message: "La votación no existe." },
-          404
-        );
-      }
+      const optionIndex =
+        Number(body?.optionIndex);
 
       if (
+        !votingId ||
         !Number.isInteger(optionIndex) ||
-        optionIndex < 0 ||
-        optionIndex >= poll.options.length
+        optionIndex < 0
       ) {
         return json(
-          { message: "La opción seleccionada no es válida." },
+          {
+            message: "Voto inválido."
+          },
           400
         );
       }
 
-      // ¿YA EXISTE ESTA OPCIÓN?
-      const existing = await env.DB
-        .prepare(`
-          SELECT votes
-          FROM community_votes
-          WHERE poll_id = ?
-          AND option_index = ?
-        `)
-        .bind(pollId, optionIndex)
+      // Buscar la votación guardada
+      // en site_state
+
+      const stateRow = await env.DB
+        .prepare(
+          "SELECT value FROM site_state WHERE key = ?"
+        )
+        .bind("instyleVotingsV1")
         .first();
 
-      if (existing) {
-        await env.DB
-          .prepare(`
-            UPDATE community_votes
-            SET votes = ?
-            WHERE poll_id = ?
-            AND option_index = ?
-          `)
-          .bind(
-            Number(existing.votes || 0) + 1,
-            pollId,
-            optionIndex
-          )
-          .run();
-      } else {
-        await env.DB
-          .prepare(`
-            INSERT INTO community_votes
-            (poll_id, option_index, votes)
-            VALUES (?, ?, ?)
-          `)
-          .bind(
-            pollId,
-            optionIndex,
-            1
-          )
-          .run();
+      if (!stateRow?.value) {
+
+        return json(
+          {
+            message:
+              "La votación no existe."
+          },
+          404
+        );
       }
 
-      const updated = await env.DB
+      let votaciones = [];
+
+      try {
+
+        votaciones =
+          JSON.parse(stateRow.value);
+
+        if (!Array.isArray(votaciones)) {
+          votaciones = [];
+        }
+
+      } catch {
+
+        votaciones = [];
+
+      }
+
+      const voting =
+        votaciones.find(function(item) {
+
+          return (
+            item &&
+            String(item.id) === votingId &&
+            item.type === "instyle"
+          );
+
+        });
+
+      if (!voting) {
+
+        return json(
+          {
+            message:
+              "La votación no existe."
+          },
+          404
+        );
+      }
+
+      // Verificar que siga activa
+
+      const active =
+        voting.status === "active" ||
+        voting.active === true ||
+        !voting.status;
+
+      if (!active) {
+
+        return json(
+          {
+            message:
+              "Esta votación ya no está activa."
+          },
+          400
+        );
+      }
+
+      // Verificar opción
+
+      if (
+        !Array.isArray(voting.options) ||
+        optionIndex >= voting.options.length
+      ) {
+
+        return json(
+          {
+            message:
+              "La opción elegida no es válida."
+          },
+          400
+        );
+      }
+
+      const updatedAt =
+        new Date().toISOString();
+
+      // Incrementar voto
+
+      await env.DB
+        .prepare(`
+          INSERT INTO community_votes (
+            voting_id,
+            option_index,
+            votes,
+            updated_at
+          )
+          VALUES (?, ?, 1, ?)
+
+          ON CONFLICT(
+            voting_id,
+            option_index
+          )
+
+          DO UPDATE SET
+            votes =
+              community_votes.votes + 1,
+            updated_at =
+              excluded.updated_at
+        `)
+        .bind(
+          votingId,
+          optionIndex,
+          updatedAt
+        )
+        .run();
+
+      // Obtener contador actualizado
+
+      const row = await env.DB
         .prepare(`
           SELECT votes
           FROM community_votes
-          WHERE poll_id = ?
+          WHERE voting_id = ?
           AND option_index = ?
         `)
-        .bind(pollId, optionIndex)
+        .bind(
+          votingId,
+          optionIndex
+        )
         .first();
 
       return json({
         ok: true,
-        pollId,
+        votingId,
         optionIndex,
-        votes: Number(updated?.votes || 0)
+        count: Number(
+          row?.votes || 0
+        )
       });
     }
 
     return json(
-      { message: "Método no permitido." },
+      {
+        message:
+          "Método no permitido."
+      },
       405
     );
 
   } catch (e) {
-    console.error("ERROR /api/community-votes", e);
+
+    console.error(
+      "ERROR /api/community-votes",
+      e
+    );
 
     return json(
       {
         ok: false,
-        message: "No se pudieron procesar los votos."
+        message:
+          "No se pudo registrar el voto.",
+        error:
+          String(e?.message || e)
       },
       500
     );
