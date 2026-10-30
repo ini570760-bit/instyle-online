@@ -6232,7 +6232,7 @@ function loadHomeForm(){
     byId('homeDamianiTextEditor').value=home.damianiText||'';
     byId('homeDamianiUrl').value=home.damianiUrl||'';
     byId('homeSignatureEditor').value=home.signature||'I.N Argentina';
-    byId('homeCollaboratorsEditor').value=home.collaborators||'';
+    renderCollaboratorEditor();
     SOCIALS.forEach(k=>byId('social'+k.charAt(0).toUpperCase()+k.slice(1)).value=home.socials[k]||'');
     setPreview('homeHeroPreview',home.heroImage);setPreview('homeAboutPreview',home.aboutImage);setPreview('homeBottegaPreview',home.bottegaImage);setPreview('homeDamianiPreview',home.damianiImage);
   }
@@ -6249,7 +6249,7 @@ function loadHomeForm(){
     home.damianiText=byId('homeDamianiTextEditor').value.trim();
     home.damianiUrl=safeHttp(byId('homeDamianiUrl').value);
     home.signature=byId('homeSignatureEditor').value.trim()||'I.N Argentina';
-    home.collaborators=byId('homeCollaboratorsEditor').value.trim();
+    home.collaborators=collectCollaborators();
     SOCIALS.forEach(k=>{home.socials[k]=safeHttp(byId('social'+k.charAt(0).toUpperCase()+k.slice(1)).value)});
     home.heroImage=absoluteSiteUrl(home.heroImage);
     home.aboutImage=absoluteSiteUrl(home.aboutImage);
@@ -6270,10 +6270,12 @@ function loadHomeForm(){
         headers:{'Content-Type':'application/json'},
         body:JSON.stringify({key:HOME_KEY,value:serialized})
       });
-      if(!response.ok)throw new Error('No se pudo sincronizar el Inicio.');
+      const result=await response.json().catch(()=>({}));
+      if(!response.ok)throw new Error(result.message||'No se pudo sincronizar el Inicio.');
       if(message){message.style.color='#315d39';message.textContent='✓ Cambios de Inicio guardados, aplicados y sincronizados.';}
     }catch(error){
-      if(message){message.style.color='#8a2929';message.textContent='✓ Cambios guardados en este dispositivo, pero no se pudieron sincronizar todavía.';}
+      console.error('Error al guardar Inicio:',error);
+      if(message){message.style.color='#8a2929';message.textContent='Los cambios se aplicaron en esta vista, pero no se pudieron guardar en el servidor: '+(error.message||'revisá tu sesión de administradora.');}
     }
   }
   const SITE_TEXTS_KEY='instyleSiteTextsV1';
