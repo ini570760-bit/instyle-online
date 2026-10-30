@@ -88,6 +88,8 @@ body.admin-mode #mivEmvCodeWrap { display:none !important; }
   function isStateKey(k){return STATE_KEYS.indexOf(k)!==-1;}
   async function api(path,options){try{return await fetch(path,options);}catch(e){return null;}}
   async function syncKey(key,value){
+    // Inicio se sincroniza solo desde saveHome(): evita un segundo POST automatico.
+    if(key==='instyleHomeSettingsV1')return;
     if(syncing||!isStateKey(key)||localStorage.getItem(ADMIN_KEY)!=='1')return;
     clearTimeout(timer);
     timer=setTimeout(async()=>{
@@ -107,10 +109,17 @@ body.admin-mode #mivEmvCodeWrap { display:none !important; }
         syncing=false;return Object.keys(state).length>0;
       }catch(e){syncing=false;return false;}
     },
+    async saveKey(key,value){
+      if(!isStateKey(key)||localStorage.getItem(ADMIN_KEY)!=='1')return false;
+      const r=await fetch('/api/state',{method:'POST',credentials:'same-origin',headers:{'Content-Type':'application/json'},body:JSON.stringify({state:{[key]:value}})});
+      const data=await r.json().catch(()=>({}));
+      if(!r.ok)throw new Error(data.message||'No se pudo sincronizar '+key+'.');
+      return true;
+    },
     async pushAll(){
       if(localStorage.getItem(ADMIN_KEY)!=='1')return false;
       const state={};STATE_KEYS.forEach(k=>{const v=localStorage.getItem(k);if(v!==null)state[k]=v;});
-      const r=await api('/api/state',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({state:state})});
+      const r=await api('/api/state',{method:'POST',credentials:'same-origin',headers:{'Content-Type':'application/json'},body:JSON.stringify({state:state})});
       return !!(r&&r.ok);
     }
   };
@@ -6261,17 +6270,11 @@ function loadHomeForm(){
     localStorage.setItem(HOME_KEY,serialized);
     applyHome();
 
-    // Guardado directo del bloque de INICIO para evitar que otro POST
-    // retrasado del sincronizador general pueda pisar los cambios recién hechos.
+    // Un solo guardado explicito para Inicio; sin POST duplicado del interceptor.
     try{
-      const response=await fetch('/api/state',{
-        method:'POST',
-        credentials:'same-origin',
-        headers:{'Content-Type':'application/json'},
-        body:JSON.stringify({key:HOME_KEY,value:serialized})
-      });
-      const result=await response.json().catch(()=>({}));
-      if(!response.ok)throw new Error(result.message||'No se pudo sincronizar el Inicio.');
+      if(!window.instyleCloudSync||typeof window.instyleCloudSync.saveKey!=='function')throw new Error('No esta disponible el sincronizador del sitio.');
+      const synced=await window.instyleCloudSync.saveKey(HOME_KEY,serialized);
+      if(!synced)throw new Error('La sesion de administradora no esta activa. Volve a ingresar al editor.');
       if(message){message.style.color='#315d39';message.textContent='✓ Cambios de Inicio guardados, aplicados y sincronizados.';}
     }catch(error){
       console.error('Error al guardar Inicio:',error);
