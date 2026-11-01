@@ -655,20 +655,21 @@ export default {
           key
         });
       } catch (e) {
-        console.error(
-          "ERROR /api/state POST",
-          e
-        );
+  console.error(
+    "ERROR /api/state POST",
+    e
+  );
 
-        return json(
-          {
-            message:
-              "No se pudo guardar el estado."
-          },
-          500
-        );
+  return json(
+    {
+      message:
+        "No se pudo guardar el estado.",
+      diagnostic:
+        String(e?.message || e)
+    },
+    500
+  );
       }
-    }
 
     // =========================================================
     // ARCHIVOS DEL SITIO
