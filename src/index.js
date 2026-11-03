@@ -663,7 +663,11 @@ export default {
         return json(
           {
             message:
-              "No se pudo guardar el estado."
+              "No se pudo guardar el estado.",
+            error:
+              String(
+                e?.message || e
+              )
           },
           500
         );
@@ -973,9 +977,12 @@ export default {
             );
 
           if (
-            Array.isArray(parsed)
+            Array.isArray(
+              parsed
+            )
           ) {
-            files = parsed;
+            files =
+              parsed;
           }
         } catch {}
 
