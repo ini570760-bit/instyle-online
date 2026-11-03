@@ -152,17 +152,17 @@ export default {
     async function getCommunityVoting(votingId) {
       const row = await env.DB
         .prepare(
-          "SELECT value FROM site_state WHERE key = ?"
+          "SELECT state_value FROM site_state WHERE state_key = ?"
         )
         .bind("instyleVotingsV1")
         .first();
 
-      if (!row?.value) {
+      if (!row?.state_value) {
         return null;
       }
 
       try {
-        const list = JSON.parse(row.value);
+        const list = JSON.parse(row.state_value);
 
         if (!Array.isArray(list)) {
           return null;
@@ -513,7 +513,7 @@ export default {
         try {
           const rows = await env.DB
             .prepare(
-              "SELECT key, value FROM site_state"
+              "SELECT state_key, state_value FROM site_state"
             )
             .all();
 
@@ -522,7 +522,7 @@ export default {
           for (
             const row of rows.results || []
           ) {
-            state[row.key] = row.value;
+            state[row.state_key] = row.state_value;
           }
 
           return json({
@@ -569,6 +569,9 @@ export default {
         const body =
           await request.json();
 
+        const updatedAt =
+          new Date().toISOString();
+
         if (
           body?.state &&
           typeof body.state === "object" &&
@@ -586,18 +589,20 @@ export default {
             await env.DB
               .prepare(`
                 INSERT INTO site_state
-                  (key, value)
-                VALUES (?, ?)
+                  (state_key, state_value, updated_at)
+                VALUES (?, ?, ?)
 
-                ON CONFLICT(key)
+                ON CONFLICT(state_key)
                 DO UPDATE SET
-                  value = excluded.value
+                  state_value = excluded.state_value,
+                  updated_at = excluded.updated_at
               `)
               .bind(
                 key,
                 value == null
                   ? null
-                  : String(value)
+                  : String(value),
+                updatedAt
               )
               .run();
           }
@@ -628,7 +633,7 @@ export default {
         if (value === null) {
           await env.DB
             .prepare(
-              "DELETE FROM site_state WHERE key = ?"
+              "DELETE FROM site_state WHERE state_key = ?"
             )
             .bind(key)
             .run();
@@ -636,16 +641,18 @@ export default {
           await env.DB
             .prepare(`
               INSERT INTO site_state
-                (key, value)
-              VALUES (?, ?)
+                (state_key, state_value, updated_at)
+              VALUES (?, ?, ?)
 
-              ON CONFLICT(key)
+              ON CONFLICT(state_key)
               DO UPDATE SET
-                value = excluded.value
+                state_value = excluded.state_value,
+                updated_at = excluded.updated_at
             `)
             .bind(
               key,
-              String(value)
+              String(value),
+              updatedAt
             )
             .run();
         }
