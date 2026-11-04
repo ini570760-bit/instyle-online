@@ -6278,7 +6278,7 @@ function loadHomeForm(){
     byId('homeDamianiTextEditor').value=home.damianiText||'';
     byId('homeDamianiUrl').value=home.damianiUrl||'';
     byId('homeSignatureEditor').value=home.signature||'I.N Argentina';
-    byId('homeCollaboratorsEditor').value=home.collaborators||'';
+    renderCollaboratorEditor();
     SOCIALS.forEach(k=>byId('social'+k.charAt(0).toUpperCase()+k.slice(1)).value=home.socials[k]||'');
     setHomePreview('homeHeroPreview',home.heroImage,'heroImage');setHomePreview('homeBottegaPreview',home.bottegaImage,'bottegaImage');setHomePreview('homeDamianiPreview',home.damianiImage,'damianiImage');
   }
@@ -6294,7 +6294,7 @@ function loadHomeForm(){
     home.damianiText=byId('homeDamianiTextEditor').value.trim();
     home.damianiUrl=safeHttp(byId('homeDamianiUrl').value);
     home.signature=byId('homeSignatureEditor').value.trim()||'I.N Argentina';
-    home.collaborators=byId('homeCollaboratorsEditor').value.trim();
+    home.collaborators=collectCollaborators();
     SOCIALS.forEach(k=>{home.socials[k]=safeHttp(byId('social'+k.charAt(0).toUpperCase()+k.slice(1)).value)});
     home.heroImage=absoluteSiteUrl(home.heroImage);
     home.aboutImage=absoluteSiteUrl(home.aboutImage);
