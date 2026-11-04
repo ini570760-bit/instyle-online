@@ -16,6 +16,70 @@ body.admin-mode #streamingCodeWrap,
 body.admin-mode #tutorialCodeWrap,
 body.admin-mode #fangroupCodeWrap,
 body.admin-mode #mivEmvCodeWrap { display:none !important; }
+
+
+/* AJUSTES RESPONSIVOS: imágenes completas y textos legibles en todos los perfiles */
+#bbangInfo .bbang-profile-image{
+  height:auto;
+  min-height:0;
+  overflow:visible;
+  background:transparent;
+}
+#bbangInfo .bbang-profile-image img{
+  display:block;
+  width:100%;
+  height:auto;
+  max-height:none;
+  object-fit:contain;
+  object-position:center;
+}
+#bbangInfo .bbang-profile-card > p:not(.label),
+#bbangInfo .bbang-latest-box > p:not(.label){
+  white-space:pre-wrap;
+  overflow-wrap:anywhere;
+  line-height:1.85;
+  margin-top:10px;
+  margin-bottom:16px;
+}
+#bbangInfo .bbang-profile-card h2,
+#bbangInfo .bbang-latest-box h3{
+  line-height:1.3;
+  margin-top:10px;
+  margin-bottom:12px;
+}
+
+/* La noticia abierta conserva la proporción original de cualquier pubmat */
+.bbang-news-article-page .bbang-article-image{
+  min-height:0;
+  height:auto;
+  padding:0;
+  background:transparent;
+  overflow:visible;
+}
+.bbang-news-article-page .bbang-article-image img{
+  display:block;
+  width:100%;
+  height:auto;
+  max-height:none;
+  object-fit:contain;
+  object-position:center;
+}
+.bbang-news-article-page .bbang-article-body{
+  font-size:16px;
+  line-height:1.9;
+  overflow-wrap:anywhere;
+}
+.bbang-news-article-page .bbang-article-body p{
+  white-space:pre-wrap;
+  margin:0 0 1.15em;
+}
+@media(max-width:720px){
+  #bbangInfo .bbang-profile-card{padding:18px;}
+  #bbangInfo .bbang-profile-image{margin-bottom:20px;}
+  .bbang-news-article-page .bbang-article-image{margin:22px 0;}
+  .bbang-news-article-page .bbang-article-body{font-size:15px;line-height:1.85;}
+}
+
 </style>
 <script id="instyle-admin-v15-authority-script">
 (function(){
@@ -88,8 +152,6 @@ body.admin-mode #mivEmvCodeWrap { display:none !important; }
   function isStateKey(k){return STATE_KEYS.indexOf(k)!==-1;}
   async function api(path,options){try{return await fetch(path,options);}catch(e){return null;}}
   async function syncKey(key,value){
-    // Inicio se sincroniza solo desde saveHome(): evita un segundo POST automatico.
-    if(key==='instyleHomeSettingsV1')return;
     if(syncing||!isStateKey(key)||localStorage.getItem(ADMIN_KEY)!=='1')return;
     clearTimeout(timer);
     timer=setTimeout(async()=>{
@@ -109,17 +171,10 @@ body.admin-mode #mivEmvCodeWrap { display:none !important; }
         syncing=false;return Object.keys(state).length>0;
       }catch(e){syncing=false;return false;}
     },
-    async saveKey(key,value){
-      if(!isStateKey(key)||localStorage.getItem(ADMIN_KEY)!=='1')return false;
-      const r=await fetch('/api/state',{method:'POST',credentials:'same-origin',headers:{'Content-Type':'application/json'},body:JSON.stringify({state:{[key]:value}})});
-      const data=await r.json().catch(()=>({}));
-      if(!r.ok)throw new Error(data.message||'No se pudo sincronizar '+key+'.');
-      return true;
-    },
     async pushAll(){
       if(localStorage.getItem(ADMIN_KEY)!=='1')return false;
       const state={};STATE_KEYS.forEach(k=>{const v=localStorage.getItem(k);if(v!==null)state[k]=v;});
-      const r=await api('/api/state',{method:'POST',credentials:'same-origin',headers:{'Content-Type':'application/json'},body:JSON.stringify({state:state})});
+      const r=await api('/api/state',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({state:state})});
       return !!(r&&r.ok);
     }
   };
@@ -2254,29 +2309,6 @@ footer p {
 #bbangInfo .bbang-latest-button{background:#49382c;border-color:#b18a45;color:#fffaf1}
 #bbangInfo .bbang-in-return{border-color:#c6a66b;color:#f5eee2}
 
-</style>
-
-<style id="bbang-profile-dark-background">
-/* Fondo oscuro SOLO para el apartado de perfiles Stray Kids e I.N */
-#bbangInfo .bbang-info-page {
-  background: #1a1918;
-  color: #faf7f2;
-  max-width: none;
-  width: 100%;
-  margin: 0;
-  padding: 70px max(6%, calc((100% - 1100px) / 2)) 90px;
-}
-#bbangInfo .bbang-info-page > h1,
-#bbangInfo .bbang-info-page > .bbang-info-lead { color: #faf7f2; }
-#bbangInfo .bbang-info-page > .label { color: #b89d62; }
-#bbangInfo .bbang-info-page .back-button { color: #faf7f2; }
-#bbangInfo .bbang-profile-tabs { border-bottom-color: rgba(250,247,242,.24); }
-#bbangInfo .bbang-profile-tab { color: #d8d0c3; }
-#bbangInfo .bbang-profile-tab.active { color: #d2b879; border-bottom-color: #b89d62; }
-#bbangInfo .bbang-profile-card { background: #eee7d9; color: #1a1918; }
-@media (max-width: 600px) {
-  #bbangInfo .bbang-info-page { padding: 48px 5% 64px; }
-}
 </style>
 </head>
 
@@ -6241,7 +6273,7 @@ function loadHomeForm(){
     byId('homeDamianiTextEditor').value=home.damianiText||'';
     byId('homeDamianiUrl').value=home.damianiUrl||'';
     byId('homeSignatureEditor').value=home.signature||'I.N Argentina';
-    renderCollaboratorEditor();
+    byId('homeCollaboratorsEditor').value=home.collaborators||'';
     SOCIALS.forEach(k=>byId('social'+k.charAt(0).toUpperCase()+k.slice(1)).value=home.socials[k]||'');
     setPreview('homeHeroPreview',home.heroImage);setPreview('homeAboutPreview',home.aboutImage);setPreview('homeBottegaPreview',home.bottegaImage);setPreview('homeDamianiPreview',home.damianiImage);
   }
@@ -6258,7 +6290,7 @@ function loadHomeForm(){
     home.damianiText=byId('homeDamianiTextEditor').value.trim();
     home.damianiUrl=safeHttp(byId('homeDamianiUrl').value);
     home.signature=byId('homeSignatureEditor').value.trim()||'I.N Argentina';
-    home.collaborators=collectCollaborators();
+    home.collaborators=byId('homeCollaboratorsEditor').value.trim();
     SOCIALS.forEach(k=>{home.socials[k]=safeHttp(byId('social'+k.charAt(0).toUpperCase()+k.slice(1)).value)});
     home.heroImage=absoluteSiteUrl(home.heroImage);
     home.aboutImage=absoluteSiteUrl(home.aboutImage);
@@ -6270,15 +6302,19 @@ function loadHomeForm(){
     localStorage.setItem(HOME_KEY,serialized);
     applyHome();
 
-    // Un solo guardado explicito para Inicio; sin POST duplicado del interceptor.
+    // Guardado directo del bloque de INICIO para evitar que otro POST
+    // retrasado del sincronizador general pueda pisar los cambios recién hechos.
     try{
-      if(!window.instyleCloudSync||typeof window.instyleCloudSync.saveKey!=='function')throw new Error('No esta disponible el sincronizador del sitio.');
-      const synced=await window.instyleCloudSync.saveKey(HOME_KEY,serialized);
-      if(!synced)throw new Error('La sesion de administradora no esta activa. Volve a ingresar al editor.');
+      const response=await fetch('/api/state',{
+        method:'POST',
+        credentials:'same-origin',
+        headers:{'Content-Type':'application/json'},
+        body:JSON.stringify({key:HOME_KEY,value:serialized})
+      });
+      if(!response.ok)throw new Error('No se pudo sincronizar el Inicio.');
       if(message){message.style.color='#315d39';message.textContent='✓ Cambios de Inicio guardados, aplicados y sincronizados.';}
     }catch(error){
-      console.error('Error al guardar Inicio:',error);
-      if(message){message.style.color='#8a2929';message.textContent='Los cambios se aplicaron en esta vista, pero no se pudieron guardar en el servidor: '+(error.message||'revisá tu sesión de administradora.');}
+      if(message){message.style.color='#8a2929';message.textContent='✓ Cambios guardados en este dispositivo, pero no se pudieron sincronizar todavía.';}
     }
   }
   const SITE_TEXTS_KEY='instyleSiteTextsV1';
@@ -7230,4 +7266,4 @@ function loadHomeForm(){
 
 </script>
 </body>
-  </html>
+</html>
