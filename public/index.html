@@ -2553,59 +2553,29 @@ footer p {
     <br>
 
     <div class="luxury-carousel">
-
-      <div class="luxury-slide">
-        <div class="luxury-photo" id="homeBottegaPhoto">
-          FOTO BOTTEGA VENETA
-        </div>
-      </div>
-
-      <div class="luxury-slide">
-
+      <article class="luxury-slide luxury-brand-card">
+        <div class="luxury-photo" id="homeBottegaPhoto">FOTO BOTTEGA VENETA</div>
         <div class="luxury-info">
-
           <p class="label">I.N × LUXURY</p>
-
           <h3 id="homeBottegaTitle">BOTTEGA VENETA</h3>
-
-          <p id="homeBottegaText">
-            Información sobre la relación de I.N con
-            Bottega Veneta y sus apariciones vinculadas
-            a la firma.
-          </p>
-
+          <div class="luxury-brand-copy" id="homeBottegaText">
+            <p>Información sobre la relación de I.N con Bottega Veneta y sus apariciones vinculadas a la firma.</p>
+          </div>
+          <a class="brand-link" id="homeBottegaLink" href="#" target="_blank" rel="noopener noreferrer" hidden>CONOCER MÁS →</a>
         </div>
+      </article>
 
-      </div>
-
-
-      <div class="luxury-slide">
-
-        <div class="luxury-photo" id="homeDamianiPhoto">
-          FOTO DAMIANI
-        </div>
-
-      </div>
-
-
-      <div class="luxury-slide">
-
+      <article class="luxury-slide luxury-brand-card">
+        <div class="luxury-photo" id="homeDamianiPhoto">FOTO DAMIANI</div>
         <div class="luxury-info">
-
           <p class="label">I.N × LUXURY</p>
-
           <h3 id="homeDamianiTitle">DAMIANI</h3>
-
-          <p id="homeDamianiText">
-            Información sobre la relación de I.N con
-            Damiani y sus apariciones vinculadas
-            a la firma.
-          </p>
-
+          <div class="luxury-brand-copy" id="homeDamianiText">
+            <p>Información sobre la relación de I.N con Damiani y sus apariciones vinculadas a la firma.</p>
+          </div>
+          <a class="brand-link" id="homeDamianiLink" href="#" target="_blank" rel="noopener noreferrer" hidden>CONOCER MÁS →</a>
         </div>
-
-      </div>
-
+      </article>
     </div>
 
   </section>
@@ -6282,7 +6252,17 @@ function loadHomeForm(){
     SOCIALS.forEach(k=>byId('social'+k.charAt(0).toUpperCase()+k.slice(1)).value=home.socials[k]||'');
     setHomePreview('homeHeroPreview',home.heroImage,'heroImage');setHomePreview('homeBottegaPreview',home.bottegaImage,'bottegaImage');setHomePreview('homeDamianiPreview',home.damianiImage,'damianiImage');
   }
-  function openHomeEditor(){byId('adminHomeEditor').hidden=false;loadHomeForm();byId('adminHomeEditor').scrollIntoView({behavior:'smooth',block:'start'});}
+  async function openHomeEditor(){
+    byId('adminHomeEditor').hidden=false;
+    const message=byId('homeEditorMessage');
+    if(message)message.textContent='ACTUALIZANDO DATOS GUARDADOS…';
+    try{if(window.instyleCloudSync&&typeof window.instyleCloudSync.pull==='function')await window.instyleCloudSync.pull();}catch(e){}
+    home=normalizeHome(getStored(HOME_KEY,defaultHome));
+    applyHome();
+    loadHomeForm();
+    if(message)message.textContent='';
+    byId('adminHomeEditor').scrollIntoView({behavior:'smooth',block:'start'});
+  }
   async function saveHome(){
     const message=byId('homeEditorMessage');
     if(homeUploadPromises.size){
@@ -6300,14 +6280,36 @@ function loadHomeForm(){
     home.aboutImage=absoluteSiteUrl(home.aboutImage);
     home.bottegaImage=absoluteSiteUrl(home.bottegaImage);
     home.damianiImage=absoluteSiteUrl(home.damianiImage);
-    const savedHome=normalizeHome(home);
+    // Recupera la versión más reciente de la nube y mezcla sus campos con
+    // los editados. Así no se descartan propiedades guardadas por otros cambios.
+    let cloudHome={},cloudReadOk=false;
+    try{
+      const cloudResponse=await fetch('/api/state',{method:'GET',credentials:'same-origin'});
+      if(cloudResponse.ok){
+        cloudReadOk=true;
+        const cloudPayload=await cloudResponse.json();
+        const rawCloud=cloudPayload&&cloudPayload.state?cloudPayload.state[HOME_KEY]:null;
+        if(rawCloud){
+          const parsedCloud=typeof rawCloud==='string'?JSON.parse(rawCloud):rawCloud;
+          if(parsedCloud&&typeof parsedCloud==='object'&&!Array.isArray(parsedCloud))cloudHome=parsedCloud;
+        }
+      }
+    }catch(e){console.warn('No se pudo leer la versión previa de Marcas/Inicio:',e);}
+    if(!cloudReadOk){
+      if(message){message.style.color='#8a2929';message.textContent='No pude comprobar los datos guardados en la nube. No se sobrescribió nada; revisá la conexión e intentá guardar otra vez.';}
+      return;
+    }
+    const savedHome=normalizeHome({
+      ...cloudHome,
+      ...home,
+      socials:{...(cloudHome.socials||{}),...(home.socials||{})}
+    });
     home=savedHome;
     const serialized=JSON.stringify(savedHome);
     localStorage.setItem(HOME_KEY,serialized);
     applyHome();
 
-    // Guardado directo del bloque de INICIO para evitar que otro POST
-    // retrasado del sincronizador general pueda pisar los cambios recién hechos.
+    // Guardado directo del bloque de INICIO; se mantiene el estado completo.
     try{
       const response=await fetch('/api/state',{
         method:'POST',
@@ -6316,7 +6318,7 @@ function loadHomeForm(){
         body:JSON.stringify({key:HOME_KEY,value:serialized})
       });
       if(!response.ok)throw new Error('No se pudo sincronizar el Inicio.');
-      if(message){message.style.color='#315d39';message.textContent='✓ Cambios de Inicio guardados, aplicados y sincronizados.';}
+      if(message){message.style.color='#315d39';message.textContent='✓ Cambios de marcas guardados y sincronizados sin borrar los datos anteriores.';}
     }catch(error){
       if(message){message.style.color='#8a2929';message.textContent='✓ Cambios guardados en este dispositivo, pero no se pudieron sincronizar todavía.';}
     }
@@ -7286,6 +7288,42 @@ function loadHomeForm(){
   .admin-preview-remove{position:absolute;top:5px;right:5px;z-index:3;width:30px;height:30px;border:1px solid #9a4b4b!important;border-radius:50%;background:#fffdf9!important;color:#854040!important;font-size:22px!important;line-height:1;cursor:pointer;box-shadow:0 2px 8px rgba(0,0,0,.18);}
   .bbang-news-admin-row .danger{color:#854040;border-color:#9a4b4b;}
   @media(max-width:720px){.bbang-news-admin-row{grid-template-columns:1fr 1fr 1fr!important;}.bbang-news-admin-row .name{grid-column:1/-1;}.bbang-news-admin-row button{min-height:36px;}}
+</style>
+
+
+<style id="bbang-brands-responsive-layout">
+  /* Bottega Veneta y Damiani: cada foto y su texto forman un solo bloque. */
+  .luxury-carousel{align-items:stretch;gap:24px;}
+  .luxury-carousel .luxury-slide.luxury-brand-card{
+    flex:0 0 min(88vw,1100px);width:min(88vw,1100px);max-width:1100px;
+    min-width:0;height:auto;min-height:0;display:grid;
+    grid-template-columns:minmax(0,1fr) minmax(0,1fr);
+    align-items:stretch;overflow:hidden;scroll-snap-align:start;
+    background:#171717;
+  }
+  .luxury-brand-card .luxury-photo{
+    width:100%;height:auto;min-height:0;overflow:visible;
+    display:flex;align-items:center;justify-content:center;background:#171717;
+  }
+  .luxury-brand-card .luxury-photo img{
+    display:block;width:100%;height:auto;max-width:100%;object-fit:contain;
+  }
+  .luxury-brand-card .luxury-info{
+    width:100%;height:auto;min-height:100%;box-sizing:border-box;
+    align-self:stretch;justify-content:center;padding:clamp(24px,4vw,60px);
+    overflow-wrap:anywhere;
+  }
+  .luxury-brand-card .luxury-info h3{font-size:clamp(30px,4.5vw,64px);line-height:1.08;}
+  .luxury-brand-card .luxury-brand-copy{max-width:520px;}
+  .luxury-brand-card .luxury-brand-copy p{white-space:pre-wrap;margin:0 0 1em;line-height:1.8;}
+  .luxury-brand-card .luxury-brand-copy p:last-child{margin-bottom:0;}
+  .luxury-brand-card .brand-link{align-self:flex-start;}
+  @media(max-width:700px){
+    .luxury-carousel .luxury-slide.luxury-brand-card{flex-basis:88vw;width:88vw;grid-template-columns:minmax(0,1fr);}
+    .luxury-brand-card .luxury-photo img{width:100%;height:auto;object-fit:contain;}
+    .luxury-brand-card .luxury-info{min-height:0;padding:28px 24px 32px;}
+    .luxury-brand-card .luxury-info h3{font-size:clamp(32px,9vw,48px);}
+  }
 </style>
 
 </body>
