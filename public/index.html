@@ -2328,6 +2328,48 @@ footer p {
 #bbangInfo .bbang-in-return{border-color:#c6a66b;color:#f5eee2}
 
 </style>
+
+<style id="bbang-brand-layout-restored">
+.luxury-carousel{align-items:stretch;gap:24px;}
+  .luxury-carousel .luxury-slide.luxury-brand-card{
+    flex:0 0 min(88vw,1100px);width:min(88vw,1100px);max-width:1100px;
+    min-width:0;height:auto;min-height:0;display:grid;
+    grid-template-columns:minmax(0,1fr) minmax(0,1fr);
+    align-items:stretch;overflow:hidden;scroll-snap-align:start;
+    background:#171717;
+  }
+  .luxury-brand-card .luxury-photo{
+    width:100%;height:auto;min-height:0;overflow:visible;
+    display:flex;align-items:center;justify-content:center;background:#171717;
+  }
+  .luxury-brand-card .luxury-photo img{
+    display:block;width:100%;height:auto;max-width:100%;object-fit:contain;
+  }
+  .luxury-brand-card .luxury-info{
+    width:100%;height:auto;min-height:100%;box-sizing:border-box;
+    align-self:stretch;justify-content:center;padding:clamp(24px,4vw,60px);
+    overflow-wrap:anywhere;
+  }
+  .luxury-brand-card .luxury-info h3{font-size:clamp(30px,4.5vw,64px);line-height:1.08;}
+  .luxury-brand-card .luxury-brand-copy{max-width:520px;}
+  .luxury-brand-card .luxury-brand-copy p{white-space:pre-wrap;margin:0 0 1em;line-height:1.8;}
+  .luxury-brand-card .luxury-brand-copy p:last-child{margin-bottom:0;}
+  .luxury-brand-card .brand-link{align-self:flex-start;}
+  @media(max-width:700px){
+    .luxury-carousel .luxury-slide.luxury-brand-card{flex-basis:88vw;width:88vw;grid-template-columns:minmax(0,1fr);}
+    .luxury-brand-card .luxury-photo img{width:100%;height:auto;object-fit:contain;}
+    .luxury-brand-card .luxury-info{min-height:0;padding:28px 24px 32px;}
+    .luxury-brand-card .luxury-info h3{font-size:clamp(32px,9vw,48px);}
+  }
+</style>
+<style id="bbang-welcome-button-spacing">
+.bbang-welcome-button{margin-top:20px;}
+</style>
+<style id="bbang-brand-social-links">
+.luxury-brand-links{display:flex;flex-wrap:wrap;gap:10px;margin-top:24px;}
+.luxury-brand-links[hidden]{display:none;}
+.luxury-brand-links .brand-link{display:inline-flex;align-items:center;padding:9px 12px;border:1px solid #b18a45;color:inherit;text-decoration:none;font-size:10px;letter-spacing:.08em;}
+</style>
 </head>
 
 
@@ -2572,57 +2614,33 @@ footer p {
 
     <div class="luxury-carousel">
 
-      <div class="luxury-slide">
+      <article class="luxury-slide luxury-brand-card" id="homeBottegaCard">
         <div class="luxury-photo" id="homeBottegaPhoto">
           FOTO BOTTEGA VENETA
         </div>
-      </div>
-
-      <div class="luxury-slide">
-
         <div class="luxury-info">
-
           <p class="label">I.N × LUXURY</p>
-
           <h3 id="homeBottegaTitle">BOTTEGA VENETA</h3>
-
-          <p id="homeBottegaText">
-            Información sobre la relación de I.N con
-            Bottega Veneta y sus apariciones vinculadas
-            a la firma.
-          </p>
-
+          <div class="luxury-brand-copy" id="homeBottegaText">
+            <p>Información sobre la relación de I.N con Bottega Veneta y sus apariciones vinculadas a la firma.</p>
+          </div>
+          <div class="luxury-brand-links" id="homeBottegaSocialLinks"></div>
         </div>
+      </article>
 
-      </div>
-
-
-      <div class="luxury-slide">
-
+      <article class="luxury-slide luxury-brand-card" id="homeDamianiCard">
         <div class="luxury-photo" id="homeDamianiPhoto">
           FOTO DAMIANI
         </div>
-
-      </div>
-
-
-      <div class="luxury-slide">
-
         <div class="luxury-info">
-
           <p class="label">I.N × LUXURY</p>
-
           <h3 id="homeDamianiTitle">DAMIANI</h3>
-
-          <p id="homeDamianiText">
-            Información sobre la relación de I.N con
-            Damiani y sus apariciones vinculadas
-            a la firma.
-          </p>
-
+          <div class="luxury-brand-copy" id="homeDamianiText">
+            <p>Información sobre la relación de I.N con Damiani y sus apariciones vinculadas a la firma.</p>
+          </div>
+          <div class="luxury-brand-links" id="homeDamianiSocialLinks"></div>
         </div>
-
-      </div>
+      </article>
 
     </div>
 
@@ -4071,9 +4089,9 @@ YouTube Music | https://..."></textarea><p class="admin-note">Podés cargar las 
           <div class="admin-fields-grid">
             <div class="admin-field full"><label>ENCABEZADO — FOTO</label><input id="homeHeroFile" class="admin-file" type="file" accept="image/*"><div id="homeHeroPreview" class="admin-image-preview">Sin imagen cargada</div><p class="admin-note">La foto aparecerá arriba del encabezado principal.</p></div>
             <div class="admin-field"><label>BOTTEGA VENETA — FOTO</label><input id="homeBottegaFile" class="admin-file" type="file" accept="image/*"><div id="homeBottegaPreview" class="admin-image-preview">Sin imagen cargada</div></div>
-            <div class="admin-field"><label>BOTTEGA VENETA — TEXTO</label><textarea id="homeBottegaTextEditor"></textarea><label style="margin-top:12px">LINK DE LA MARCA</label><input id="homeBottegaUrl" type="url" placeholder="https://..."></div>
+            <div class="admin-field"><label>BOTTEGA VENETA — TEXTO</label><textarea id="homeBottegaTextEditor"></textarea><label style="margin-top:12px">WEB OFICIAL</label><input id="homeBottegaUrl" type="url" placeholder="https://..."><label style="margin-top:12px">INSTAGRAM</label><input id="homeBottegaInstagram" type="url" placeholder="https://instagram.com/..."><label style="margin-top:12px">X</label><input id="homeBottegaX" type="url" placeholder="https://x.com/..."><label style="margin-top:12px">TIKTOK</label><input id="homeBottegaTikTok" type="url" placeholder="https://tiktok.com/@..."><label style="margin-top:12px">YOUTUBE</label><input id="homeBottegaYouTube" type="url" placeholder="https://youtube.com/..."></div>
             <div class="admin-field"><label>DAMIANI — FOTO</label><input id="homeDamianiFile" class="admin-file" type="file" accept="image/*"><div id="homeDamianiPreview" class="admin-image-preview">Sin imagen cargada</div></div>
-            <div class="admin-field"><label>DAMIANI — TEXTO</label><textarea id="homeDamianiTextEditor"></textarea><label style="margin-top:12px">LINK DE LA MARCA</label><input id="homeDamianiUrl" type="url" placeholder="https://..."></div>
+            <div class="admin-field"><label>DAMIANI — TEXTO</label><textarea id="homeDamianiTextEditor"></textarea><label style="margin-top:12px">WEB OFICIAL</label><input id="homeDamianiUrl" type="url" placeholder="https://..."><label style="margin-top:12px">INSTAGRAM</label><input id="homeDamianiInstagram" type="url" placeholder="https://instagram.com/..."><label style="margin-top:12px">X</label><input id="homeDamianiX" type="url" placeholder="https://x.com/..."><label style="margin-top:12px">TIKTOK</label><input id="homeDamianiTikTok" type="url" placeholder="https://tiktok.com/@..."><label style="margin-top:12px">YOUTUBE</label><input id="homeDamianiYouTube" type="url" placeholder="https://youtube.com/..."></div>
             <div class="admin-field full"><label>PIE DE PÁGINA — FIRMA</label><input id="homeSignatureEditor" type="text" value="I.N Argentina para fans" placeholder="I.N Argentina para fans"></div>
             <div class="admin-field full"><label>PIE DE PÁGINA — COLABORADORES</label><div id="homeCollaboratorsEditor" class="home-collaborators-editor"></div><button id="addHomeCollaborator" type="button" class="admin-secondary collaborator-add-button">＋ AGREGAR COLABORADOR</button><p class="admin-note">Podés agregar o quitar colaboradores. Dejá vacío si no querés mostrar ninguno.</p></div>
             <div class="admin-field full"><label>SÍGUENOS — REDES SOCIALES DE I.N ARGENTINA</label><div class="admin-social-grid">
@@ -6287,6 +6305,18 @@ document.addEventListener('DOMContentLoaded',function(){
       }
       const a=byId(linkId),url=safeHttp(home[key+'Url']);
       if(a){a.hidden=!url;a.href=url;}
+      const links=byId(key==='bottega'?'homeBottegaSocialLinks':'homeDamianiSocialLinks');
+      if(links){
+        const items=[
+          ['WEB OFICIAL',home[key+'Url']],
+          ['INSTAGRAM',home[key+'Instagram']],
+          ['X',home[key+'X']],
+          ['TIKTOK',home[key+'TikTok']],
+          ['YOUTUBE',home[key+'YouTube']]
+        ].filter(item=>safeHttp(item[1]));
+        links.innerHTML=items.map(item=>'<a class="brand-link" target="_blank" rel="noopener noreferrer" href="'+escapeHtml(safeHttp(item[1]))+'">'+item[0]+' ↗</a>').join('');
+        links.hidden=!items.length;
+      }
     };
     brand('bottega','homeBottegaPhoto','homeBottegaText','homeBottegaLink');
     brand('damiani','homeDamianiPhoto','homeDamianiText','homeDamianiLink');
@@ -6300,8 +6330,16 @@ function collectCollaborators(){return [...document.querySelectorAll('.home-coll
 function loadHomeForm(){
     byId('homeBottegaTextEditor').value=home.bottegaText||'';
     byId('homeBottegaUrl').value=home.bottegaUrl||'';
+    byId('homeBottegaInstagram').value=home.bottegaInstagram||'';
+    byId('homeBottegaX').value=home.bottegaX||'';
+    byId('homeBottegaTikTok').value=home.bottegaTikTok||'';
+    byId('homeBottegaYouTube').value=home.bottegaYouTube||'';
     byId('homeDamianiTextEditor').value=home.damianiText||'';
     byId('homeDamianiUrl').value=home.damianiUrl||'';
+    byId('homeDamianiInstagram').value=home.damianiInstagram||'';
+    byId('homeDamianiX').value=home.damianiX||'';
+    byId('homeDamianiTikTok').value=home.damianiTikTok||'';
+    byId('homeDamianiYouTube').value=home.damianiYouTube||'';
     byId('homeSignatureEditor').value=home.signature||'I.N Argentina';
     renderCollaboratorEditor();
     SOCIALS.forEach(k=>byId('social'+k.charAt(0).toUpperCase()+k.slice(1)).value=home.socials[k]||'');
@@ -6316,8 +6354,16 @@ function loadHomeForm(){
     }
     home.bottegaText=byId('homeBottegaTextEditor').value.trim();
     home.bottegaUrl=safeHttp(byId('homeBottegaUrl').value);
+    home.bottegaInstagram=safeHttp(byId('homeBottegaInstagram').value);
+    home.bottegaX=safeHttp(byId('homeBottegaX').value);
+    home.bottegaTikTok=safeHttp(byId('homeBottegaTikTok').value);
+    home.bottegaYouTube=safeHttp(byId('homeBottegaYouTube').value);
     home.damianiText=byId('homeDamianiTextEditor').value.trim();
     home.damianiUrl=safeHttp(byId('homeDamianiUrl').value);
+    home.damianiInstagram=safeHttp(byId('homeDamianiInstagram').value);
+    home.damianiX=safeHttp(byId('homeDamianiX').value);
+    home.damianiTikTok=safeHttp(byId('homeDamianiTikTok').value);
+    home.damianiYouTube=safeHttp(byId('homeDamianiYouTube').value);
     home.signature=byId('homeSignatureEditor').value.trim()||'I.N Argentina';
     home.collaborators=collectCollaborators();
     SOCIALS.forEach(k=>{home.socials[k]=safeHttp(byId('social'+k.charAt(0).toUpperCase()+k.slice(1)).value)});
@@ -7352,6 +7398,90 @@ function loadHomeForm(){
   .admin-preview-remove{position:absolute;top:5px;right:5px;z-index:3;width:30px;height:30px;border:1px solid #9a4b4b!important;border-radius:50%;background:#fffdf9!important;color:#854040!important;font-size:22px!important;line-height:1;cursor:pointer;box-shadow:0 2px 8px rgba(0,0,0,.18);}
   .bbang-news-admin-row .danger{color:#854040;border-color:#9a4b4b;}
   @media(max-width:720px){.bbang-news-admin-row{grid-template-columns:1fr 1fr 1fr!important;}.bbang-news-admin-row .name{grid-column:1/-1;}.bbang-news-admin-row button{min-height:36px;}}
+</style>
+
+
+<style id="bbang-brand-layout-final">
+.luxury-carousel{
+  display:flex;
+  align-items:stretch;
+  gap:24px;
+  overflow-x:auto;
+  scroll-snap-type:x mandatory;
+}
+.luxury-carousel .luxury-slide.luxury-brand-card{
+  flex:0 0 min(88vw,1100px);
+  width:min(88vw,1100px);
+  max-width:1100px;
+  min-width:0;
+  height:auto;
+  min-height:0;
+  display:grid;
+  grid-template-columns:minmax(0,1fr) minmax(0,1fr);
+  align-items:stretch;
+  overflow:hidden;
+  scroll-snap-align:start;
+  background:#171717;
+}
+.luxury-brand-card .luxury-photo{
+  width:100%;
+  height:auto;
+  min-height:0;
+  overflow:visible;
+  display:flex;
+  align-items:center;
+  justify-content:center;
+  background:#171717;
+}
+.luxury-brand-card .luxury-photo img{
+  display:block;
+  width:100% !important;
+  height:auto !important;
+  max-width:100%;
+  max-height:none !important;
+  object-fit:contain !important;
+}
+.luxury-brand-card .luxury-info{
+  width:100%;
+  height:auto;
+  min-height:100%;
+  box-sizing:border-box;
+  align-self:stretch;
+  justify-content:center;
+  padding:clamp(24px,4vw,60px);
+  overflow-wrap:anywhere;
+}
+.luxury-brand-card .luxury-info h3{
+  font-size:clamp(30px,4.5vw,64px);
+  line-height:1.08;
+}
+.luxury-brand-card .luxury-brand-copy{max-width:520px;}
+.luxury-brand-card .luxury-brand-copy p{
+  white-space:pre-wrap;
+  margin:0 0 1em;
+  line-height:1.8;
+}
+.luxury-brand-card .luxury-brand-copy p:last-child{margin-bottom:0;}
+.luxury-brand-card .brand-link{align-self:flex-start;}
+@media(max-width:700px){
+  .luxury-carousel .luxury-slide.luxury-brand-card{
+    flex-basis:88vw;
+    width:88vw;
+    grid-template-columns:minmax(0,1fr);
+  }
+  .luxury-brand-card .luxury-photo img{
+    width:100% !important;
+    height:auto !important;
+    object-fit:contain !important;
+  }
+  .luxury-brand-card .luxury-info{
+    min-height:0;
+    padding:28px 24px 32px;
+  }
+  .luxury-brand-card .luxury-info h3{
+    font-size:clamp(32px,9vw,48px);
+  }
+}
 </style>
 
 </body>
